@@ -40,8 +40,7 @@ class PixExif:
 
         name = self._meta.original_name
 
-        # 1. 尝试完整匹配我们的命名规范，防止重复追加前缀 (套娃)
-        # 例如: 20251116133758_XAVC_C0419
+        # 1. 尝试完整匹配: 时间戳_设备名_原始名 (例如: 20251116133758_XAVC_C0419)
         full_match = re.search(r'^(20\d{12})_([^_]+)_(.+)$', name)
         if full_match:
             self._meta.timestamp = full_match.group(1)
@@ -49,10 +48,17 @@ class PixExif:
             self._meta.original_name = full_match.group(3)
             return True
 
-        # 2. 尝试从文件名开头匹配 14 位时间戳
+        # 2. 尝试匹配: 时间戳_原始名 (例如: 20260524110710_C0576)
+        partial_match = re.search(r'^(20\d{12})_(.+)$', name)
+        if partial_match:
+            self._meta.timestamp = partial_match.group(1)
+            self._meta.original_name = partial_match.group(2)
+            return True
+
+        # 3. 尝试从文件名开头匹配 14 位时间戳
         match = re.search(r'^(20\d{12})', name)
         if not match:
-            # 3. 尝试在文件名的任意位置匹配 14 位时间戳
+            # 4. 尝试在文件名的任意位置匹配 14 位时间戳
             match = re.search(r'(20\d{12})', name)
 
         if match:

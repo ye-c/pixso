@@ -59,8 +59,12 @@ def process(
             # 收集支持的图片和视频文件
             extensions = PixExif._IMAGES | PixExif._VIDEOS
             for ext in extensions:
-                files_to_process.extend(p.rglob(f"*{ext}"))
-                files_to_process.extend(p.rglob(f"*{ext.upper()}"))
+                for f in p.rglob(f"*{ext}"):
+                    if not f.name.startswith("._") and not f.name.startswith("."):
+                        files_to_process.append(f)
+                for f in p.rglob(f"*{ext.upper()}"):
+                    if not f.name.startswith("._") and not f.name.startswith("."):
+                        files_to_process.append(f)
         else:
             typer.echo(f"错误: 目录不存在: {directory}", err=True)
             raise typer.Exit(1)
