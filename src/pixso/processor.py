@@ -12,6 +12,11 @@ class PixProcessor:
         self.log_dir = self.target_dir / ".pixso_logs"
         self.delete_duplicates = delete_duplicates
 
+        # 为当前运行创建一个带时间戳的日志文件
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.log_file = self.log_dir / f"px_{timestamp}.log"
+
     def plan_moves(self, files: List[Path]) -> List[Dict[str, Any]]:
         """为文件列表生成移动计划"""
         plan = []
@@ -98,18 +103,18 @@ class PixProcessor:
                 try:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(source), str(target))
-                    log_action(self.log_dir, source, target, status)
+                    log_action(self.log_dir, self.log_file, source, target, status)
                     item["status"] = f"{status} (Success)"
                 except Exception as e:
                     item["status"] = f"{status} (Failed: {e})"
             elif status == "Delete (Duplicate)":
                 try:
                     source.unlink()
-                    log_action(self.log_dir, source, target, status)
+                    log_action(self.log_dir, self.log_file, source, target, status)
                     item["status"] = f"{status} (Success)"
                 except Exception as e:
                     item["status"] = f"{status} (Failed: {e})"
             elif "Skip" in status:
-                log_action(self.log_dir, source, target, status)
+                log_action(self.log_dir, self.log_file, source, target, status)
 
             yield item

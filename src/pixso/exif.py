@@ -31,7 +31,35 @@ class PixExif:
             original_name=self._path.stem,
             suffix=self._path.suffix,
         )
+        self._has_filename_time = self._parse_filename()
         self._extract()
+
+    def _parse_filename(self) -> bool:
+        """解析文件名，提取可能的时间戳、设备信息，并清理 original_name 防止重复追加前缀"""
+        import re
+
+        name = self._meta.original_name
+
+        # 1. 尝试完整匹配我们的命名规范，防止重复追加前缀 (套娃)
+        # 例如: 20251116133758_XAVC_C0419
+        full_match = re.search(r'^(20\d{12})_([^_]+)_(.+)$', name)
+        if full_match:
+            self._meta.timestamp = full_match.group(1)
+            self._meta.device = full_match.group(2)
+            self._meta.original_name = full_match.group(3)
+            return True
+
+        # 2. 尝试从文件名开头匹配 14 位时间戳
+        match = re.search(r'^(20\d{12})', name)
+        if not match:
+            # 3. 尝试在文件名的任意位置匹配 14 位时间戳
+            match = re.search(r'(20\d{12})', name)
+
+        if match:
+            self._meta.timestamp = match.group(1)
+            return True
+
+        return False
 
     def _extract(self):
         """提取元数据"""
@@ -42,6 +70,10 @@ class PixExif:
         else:
             raise ValueError(f"不支持的格式: {self._path.suffix}")
 
+        if self._has_filename_time:
+            # 如果从文件名解析到了信息，且 exif 提取没有覆盖或者覆盖的是 unknown，则保持文件名的信息
+            pass
+
     def _extract_image(self):
         """提取图片EXIF数据"""
         with self._path.open('rb') as f:
@@ -49,14 +81,18 @@ class PixExif:
 
             # 提取设备型号
             if 'Image Model' in tags:
-                self._meta.device = str(tags['Image Model']).strip().replace(" ", "_")
+                model = str(tags['Image Model']).strip().replace(" ", "_")
+                if self._meta.device == "unknown":
+                    self._meta.device = model
 
             # 提取拍摄时间
             if 'EXIF DateTimeOriginal' in tags:
                 dt = str(tags['EXIF DateTimeOriginal'])
-                self._meta.timestamp = dt.replace(':', '').replace(' ', '')
+                if not self._has_filename_time:
+                    self._meta.timestamp = dt.replace(':', '').replace(' ', '')
             else:
-                self._fallback_timestamp()
+                if not self._has_filename_time:
+                    self._fallback_timestamp()
 
     def _parse_video_time(self, time_str: str) -> str:
         """尝试多种格式解析视频时间"""
@@ -75,32 +111,7 @@ class PixExif:
         return None
 
     def _fallback_timestamp(self):
-        """回退使用文件名或文件系统创建时间"""
-        import re
-
-        name = self._meta.original_name
-
-        # 1. 尝试完整匹配我们的命名规范，防止重复追加前缀 (套娃)
-        # 例如: 20251116133758_XAVC_C0419
-        full_match = re.search(r'^(20\d{12})_([^_]+)_(.+)$', name)
-        if full_match:
-            self._meta.timestamp = full_match.group(1)
-            if self._meta.device == "unknown":
-                self._meta.device = full_match.group(2)
-            self._meta.original_name = full_match.group(3)
-            return
-
-        # 2. 尝试从文件名开头匹配 14 位时间戳
-        match = re.search(r'^(20\d{12})', name)
-        if not match:
-            # 3. 尝试在文件名的任意位置匹配 14 位时间戳
-            match = re.search(r'(20\d{12})', name)
-
-        if match:
-            self._meta.timestamp = match.group(1)
-            return
-
-        # 4. 最后回退到文件系统创建时间
+        """回退使用文件系统创建时间"""
         self._meta.timestamp = datetime.fromtimestamp(
             self._path.stat().st_ctime
         ).strftime('%Y%m%d%H%M%S')
@@ -130,7 +141,8 @@ class PixExif:
             if creation_time:
                 parsed_time = self._parse_video_time(creation_time)
                 if parsed_time:
-                    self._meta.timestamp = parsed_time
+                    if not self._has_filename_time:
+                        self._meta.timestamp = parsed_time
                 else:
                     import typer
 
@@ -138,9 +150,11 @@ class PixExif:
                         f"Warning: Failed to parse video creation_time '{creation_time}' for {self._path}",
                         err=True,
                     )
-                    self._fallback_timestamp()
+                    if not self._has_filename_time:
+                        self._fallback_timestamp()
             else:
-                self._fallback_timestamp()
+                if not self._has_filename_time:
+                    self._fallback_timestamp()
 
             # 3. 提取设备信息
             model = (
@@ -150,7 +164,9 @@ class PixExif:
             )
 
             if model:
-                self._meta.device = str(model).strip().replace(" ", "_")
+                model_str = str(model).strip().replace(" ", "_")
+                if self._meta.device == "unknown":
+                    self._meta.device = model_str
 
         except Exception as e:
             import typer
@@ -159,8 +175,10 @@ class PixExif:
                 f"Error extracting video metadata for {self._path}: {e}", err=True
             )
             # 解析完全失败时回退
-            self._fallback_timestamp()
-            self._meta.device = "unknown"
+            if not self._has_filename_time:
+                self._fallback_timestamp()
+            if self._meta.device == "unknown":
+                self._meta.device = "unknown"
 
     @property
     def is_image(self) -> bool:

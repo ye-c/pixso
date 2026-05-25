@@ -13,10 +13,9 @@ def get_file_hash(path: Path, chunk_size: int = 8192) -> str:
     return hasher.hexdigest()
 
 
-def log_action(log_dir: Path, source: Path, target: Path, status: str):
+def log_action(log_dir: Path, log_file: Path, source: Path, target: Path, status: str):
     """将执行记录追加到日志文件"""
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "history.log"
 
     record = {
         "timestamp": datetime.now().isoformat(),
