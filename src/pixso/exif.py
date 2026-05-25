@@ -16,7 +16,7 @@ class PixMeta:
 
     @property
     def name(self):
-        if self.device in ("unknown", "video_device"):
+        if self.device == "unknown":
             return f'{self.timestamp}_{self.original_name}.{self.suffix[1:]}'
         return f'{self.timestamp}_{self.device}_{self.original_name}.{self.suffix[1:]}'
 
@@ -64,7 +64,7 @@ class PixExif:
             '%Y-%m-%dT%H:%M:%S.%fZ',
             '%Y-%m-%dT%H:%M:%SZ',
             '%Y-%m-%d %H:%M:%S',
-            '%Y-%m-%dT%H:%M:%S.000000Z'
+            '%Y-%m-%dT%H:%M:%S.000000Z',
         ]
         for fmt in formats:
             try:
@@ -77,6 +77,7 @@ class PixExif:
     def _fallback_timestamp(self):
         """回退使用文件名或文件系统创建时间"""
         import re
+
         name = self._meta.original_name
 
         # 1. 尝试完整匹配我们的命名规范，防止重复追加前缀 (套娃)
@@ -84,7 +85,7 @@ class PixExif:
         full_match = re.search(r'^(20\d{12})_([^_]+)_(.+)$', name)
         if full_match:
             self._meta.timestamp = full_match.group(1)
-            if self._meta.device in ("unknown", "video_device"):
+            if self._meta.device == "unknown":
                 self._meta.device = full_match.group(2)
             self._meta.original_name = full_match.group(3)
             return
@@ -113,42 +114,53 @@ class PixExif:
             # 1. 获取 format 层级和 stream 层级的 tags
             format_tags = probe.get('format', {}).get('tags', {})
             video_stream = next(
-                (stream for stream in probe.get('streams', []) if stream.get('codec_type') == 'video'),
-                {}
+                (
+                    stream
+                    for stream in probe.get('streams', [])
+                    if stream.get('codec_type') == 'video'
+                ),
+                {},
             )
             stream_tags = video_stream.get('tags', {})
 
             # 2. 提取时间戳
-            creation_time = stream_tags.get('creation_time') or format_tags.get('creation_time')
+            creation_time = stream_tags.get('creation_time') or format_tags.get(
+                'creation_time'
+            )
             if creation_time:
                 parsed_time = self._parse_video_time(creation_time)
                 if parsed_time:
                     self._meta.timestamp = parsed_time
                 else:
                     import typer
-                    typer.echo(f"Warning: Failed to parse video creation_time '{creation_time}' for {self._path}", err=True)
+
+                    typer.echo(
+                        f"Warning: Failed to parse video creation_time '{creation_time}' for {self._path}",
+                        err=True,
+                    )
                     self._fallback_timestamp()
             else:
                 self._fallback_timestamp()
 
             # 3. 提取设备信息
             model = (
-                stream_tags.get('model') or
-                format_tags.get('model') or
-                format_tags.get('com.apple.quicktime.model')
+                stream_tags.get('model')
+                or format_tags.get('model')
+                or format_tags.get('com.apple.quicktime.model')
             )
 
             if model:
                 self._meta.device = str(model).strip().replace(" ", "_")
-            else:
-                self._meta.device = "video_device"
 
         except Exception as e:
             import typer
-            typer.echo(f"Error extracting video metadata for {self._path}: {e}", err=True)
+
+            typer.echo(
+                f"Error extracting video metadata for {self._path}: {e}", err=True
+            )
             # 解析完全失败时回退
             self._fallback_timestamp()
-            self._meta.device = "video_device"
+            self._meta.device = "unknown"
 
     @property
     def is_image(self) -> bool:
