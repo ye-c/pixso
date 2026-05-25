@@ -17,7 +17,7 @@ class PixProcessor:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.log_file = self.log_dir / f"px_{timestamp}.log"
 
-    def plan_moves(self, files: List[Path]) -> List[Dict[str, Any]]:
+    def plan_moves(self, files: List[Path], progress_callback=None) -> List[Dict[str, Any]]:
         """为文件列表生成移动计划"""
         plan = []
         for file_path in files:
@@ -41,6 +41,8 @@ class PixProcessor:
                         "exif": None,
                     }
                 )
+            if progress_callback:
+                progress_callback()
         return plan
 
     def _compute_target(self, source_path: Path, exif: PixExif) -> tuple[Path, str]:

@@ -6,6 +6,7 @@ import typer
 from rich.console import Console
 from rich.progress import (
     BarColumn,
+    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
     TaskProgressColumn,
@@ -75,8 +76,17 @@ def process(
 
     processor = PixProcessor(target_dir, delete_duplicates=delete_duplicates)
 
-    with console.status("[bold green]正在扫描和解析文件...") as status:
-        plan = processor.plan_moves(files_to_process)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        MofNCompleteColumn(),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[bold green]正在扫描和解析文件: ", total=len(files_to_process))
+        plan = processor.plan_moves(files_to_process, progress_callback=lambda: progress.advance(task))
 
     # 打印计划表格
     table = Table(title="文件处理计划")
@@ -120,6 +130,7 @@ def process(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        MofNCompleteColumn(),
         BarColumn(),
         TaskProgressColumn(),
         TimeRemainingColumn(),
