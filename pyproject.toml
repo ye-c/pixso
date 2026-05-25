@@ -1,0 +1,32 @@
+[project]
+name = "pixso"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "ye-c", email = "victye@163.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "exifread>=3.5.1",
+    "ffmpeg>=1.4",
+    "typer[all]>=0.25.1",
+]
+
+[project.scripts]
+px = "pixso:main"
+
+[build-system]
+requires = ["uv_build>=0.9.15,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 88
+fix = true
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E203", "E501"]
+
+[tool.ruff.format]
+quote-style = "preserve"
