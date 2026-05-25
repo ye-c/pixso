@@ -7,9 +7,10 @@ from .exif import PixExif
 from .utils import get_file_hash, log_action
 
 class PixProcessor:
-    def __init__(self, target_dir: str):
+    def __init__(self, target_dir: str, delete_duplicates: bool = False):
         self.target_dir = Path(target_dir)
         self.log_dir = self.target_dir / ".pixso_logs"
+        self.delete_duplicates = delete_duplicates
 
     def plan_moves(self, files: List[Path]) -> List[Dict[str, Any]]:
         """为文件列表生成移动计划"""
@@ -62,7 +63,8 @@ class PixProcessor:
             target_hash = get_file_hash(target_path)
 
             if source_hash == target_hash:
-                return target_path, "Skip (Duplicate)"
+                status = "Delete (Duplicate)" if self.delete_duplicates else "Skip (Duplicate)"
+                return target_path, status
 
             # 冲突但内容不同，重命名
             counter = 1
@@ -88,6 +90,13 @@ class PixProcessor:
                 try:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(source), str(target))
+                    log_action(self.log_dir, source, target, status)
+                    item["status"] = f"{status} (Success)"
+                except Exception as e:
+                    item["status"] = f"{status} (Failed: {e})"
+            elif status == "Delete (Duplicate)":
+                try:
+                    source.unlink()
                     log_action(self.log_dir, source, target, status)
                     item["status"] = f"{status} (Success)"
                 except Exception as e:
