@@ -5,6 +5,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 
 from .exif import PixExif
 from .processor import PixProcessor
@@ -100,8 +101,17 @@ def process(
     if not yes:
         typer.confirm("确认执行以上文件操作？", abort=True)
 
-    with console.status("[bold green]正在执行文件操作...") as status:
-        processor.execute_plan(plan)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]正在执行文件操作...", total=len(plan))
+        for _ in processor.execute_plan(plan):
+            progress.advance(task)
 
     console.print("[bold green]执行完成！[/bold green]")
 

@@ -103,3 +103,5 @@ class PixProcessor:
                     item["status"] = f"{status} (Failed: {e})"
             elif "Skip" in status:
                 log_action(self.log_dir, source, target, status)
+
+            yield item
