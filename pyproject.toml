@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "exifread>=3.5.1",
-    "ffmpeg>=1.4",
+    "ffmpeg-python>=0.2.0",
     "rich>=15.0.0",
     "typer[all]>=0.25.1",
 ]
