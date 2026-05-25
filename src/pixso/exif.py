@@ -12,9 +12,12 @@ class PixMeta:
     device: str = "unknown"
     original_name: str = None
     suffix: str = None
+    is_fallback_time: bool = False
 
     @property
     def name(self):
+        if self.device in ("unknown", "video_device"):
+            return f'{self.timestamp}_{self.original_name}.{self.suffix[1:]}'
         return f'{self.timestamp}_{self.device}_{self.original_name}.{self.suffix[1:]}'
 
 
@@ -100,6 +103,7 @@ class PixExif:
         self._meta.timestamp = datetime.fromtimestamp(
             self._path.stat().st_ctime
         ).strftime('%Y%m%d%H%M%S')
+        self._meta.is_fallback_time = True
 
     def _extract_video(self):
         """提取视频元数据"""

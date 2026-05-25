@@ -40,12 +40,8 @@ class PixProcessor:
 
     def _compute_target(self, source_path: Path, exif: PixExif) -> tuple[Path, str]:
         """计算目标路径并处理冲突"""
-        # 确定类别
-        category = (
-            "archive"
-            if exif._meta.device not in ("unknown", "video_device")
-            else "snapshot"
-        )
+        # 确定类别 (如果没有成功提取时间戳，才进入 snapshot)
+        category = "snapshot" if exif._meta.is_fallback_time else "archive"
 
         # 确定日期文件夹 (YYYYMM)
         date_folder = exif._meta.timestamp[:6]

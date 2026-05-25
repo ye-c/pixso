@@ -76,8 +76,8 @@ def process(
 
     # 打印计划表格
     table = Table(title="文件处理计划")
-    table.add_column("源文件", style="cyan", no_wrap=False)
-    table.add_column("目标文件", style="magenta", no_wrap=False)
+    table.add_column("源文件", style="cyan", no_wrap=False, overflow="fold")
+    table.add_column("目标文件", style="magenta", no_wrap=False, overflow="fold")
     table.add_column("状态/操作", style="green")
 
     for item in plan:
