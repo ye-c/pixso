@@ -85,6 +85,14 @@ class PixExif:
             ).strftime('%Y%m%d%H%M%S')
             self._meta.device = "video_device"
 
+    @property
+    def is_image(self) -> bool:
+        return self._path.suffix.lower() in self._IMAGES
+
+    @property
+    def is_video(self) -> bool:
+        return self._path.suffix.lower() in self._VIDEOS
+
     def rename(self):
         """生成标准化的文件名"""
         return self._meta.name

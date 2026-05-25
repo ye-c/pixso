@@ -75,6 +75,7 @@ source = { editable = "." }
 dependencies = [
     { name = "exifread" },
     { name = "ffmpeg" },
+    { name = "rich" },
     { name = "typer" },
 ]
 
@@ -82,6 +83,7 @@ dependencies = [
 requires-dist = [
     { name = "exifread", specifier = ">=3.5.1" },
     { name = "ffmpeg", specifier = ">=1.4" },
+    { name = "rich", specifier = ">=15.0.0" },
     { name = "typer", extras = ["all"], specifier = ">=0.25.1" },
 ]
 
