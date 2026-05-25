@@ -1,10 +1,10 @@
-import os
 import shutil
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from .exif import PixExif
 from .utils import get_file_hash, log_action
+
 
 class PixProcessor:
     def __init__(self, target_dir: str, delete_duplicates: bool = False):
@@ -19,25 +19,33 @@ class PixProcessor:
             try:
                 exif = PixExif(file_path)
                 target_path, status = self._compute_target(file_path, exif)
-                plan.append({
-                    "source": file_path,
-                    "target": target_path,
-                    "status": status,
-                    "exif": exif
-                })
+                plan.append(
+                    {
+                        "source": file_path,
+                        "target": target_path,
+                        "status": status,
+                        "exif": exif,
+                    }
+                )
             except Exception as e:
-                plan.append({
-                    "source": file_path,
-                    "target": None,
-                    "status": f"Error: {e}",
-                    "exif": None
-                })
+                plan.append(
+                    {
+                        "source": file_path,
+                        "target": None,
+                        "status": f"Error: {e}",
+                        "exif": None,
+                    }
+                )
         return plan
 
     def _compute_target(self, source_path: Path, exif: PixExif) -> tuple[Path, str]:
         """计算目标路径并处理冲突"""
         # 确定类别
-        category = "archive" if exif._meta.device not in ("unknown", "video_device") else "snapshot"
+        category = (
+            "archive"
+            if exif._meta.device not in ("unknown", "video_device")
+            else "snapshot"
+        )
 
         # 确定日期文件夹 (YYYYMM)
         date_folder = exif._meta.timestamp[:6]
@@ -63,7 +71,11 @@ class PixProcessor:
             target_hash = get_file_hash(target_path)
 
             if source_hash == target_hash:
-                status = "Delete (Duplicate)" if self.delete_duplicates else "Skip (Duplicate)"
+                status = (
+                    "Delete (Duplicate)"
+                    if self.delete_duplicates
+                    else "Skip (Duplicate)"
+                )
                 return target_path, status
 
             # 冲突但内容不同，重命名
