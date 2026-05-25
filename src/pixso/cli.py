@@ -148,67 +148,32 @@ def process(
 
 
 @app.command()
-def stats(
-    month: Optional[str] = typer.Argument(None, help="查询指定月份 (格式: YYYYMM)"),
-):
-    """统计归档目录中的文件数量"""
-    target_dir = os.environ.get("PIXSO_TARGET_DIR")
-    if not target_dir:
-        typer.echo("错误: 必须设置 PIXSO_TARGET_DIR 环境变量", err=True)
+def exif(file: str = typer.Argument(..., help="要查看的文件路径")):
+    """查看文件的元数据解析结果"""
+    p = Path(file)
+    if not p.is_file():
+        typer.echo(f"错误: 文件不存在: {file}", err=True)
         raise typer.Exit(1)
 
-    base_path = Path(target_dir)
-    if not base_path.exists():
-        typer.echo(f"错误: 目标目录不存在: {target_dir}", err=True)
+    try:
+        exif = PixExif(p)
+        table = Table(title=f"元数据解析结果: {p.name}")
+        table.add_column("属性", style="cyan")
+        table.add_column("值", style="magenta")
+
+        table.add_row("原始名称", exif._meta.original_name)
+        table.add_row("后缀", exif._meta.suffix)
+        table.add_row("时间戳 (YYYYMMDDHHMMSS)", exif._meta.timestamp)
+        table.add_row("设备型号", exif._meta.device)
+        table.add_row("是否回退时间", str(exif._meta.is_fallback_time))
+        table.add_row("图片", str(exif.is_image))
+        table.add_row("视频", str(exif.is_video))
+        table.add_row("最终文件名", exif.rename())
+
+        console.print(table)
+    except Exception as e:
+        typer.echo(f"解析失败: {e}", err=True)
         raise typer.Exit(1)
-
-    stats_data = {}
-
-    # 遍历 archive 和 snapshot 目录
-    for category in ["archive", "snapshot"]:
-        cat_path = base_path / category
-        if not cat_path.exists():
-            continue
-
-        for month_dir in cat_path.iterdir():
-            if not month_dir.is_dir() or month_dir.name.startswith("."):
-                continue
-
-            m = month_dir.name
-            if month and m != month:
-                continue
-
-            if m not in stats_data:
-                stats_data[m] = {"p": 0, "v": 0, "misc": 0}
-
-            for media_type in ["p", "v", "misc"]:
-                media_dir = month_dir / media_type
-                if media_dir.exists():
-                    count = sum(
-                        1
-                        for _ in media_dir.iterdir()
-                        if _.is_file() and not _.name.startswith(".")
-                    )
-                    stats_data[m][media_type] += count
-
-    if not stats_data:
-        console.print("[yellow]没有找到任何统计数据。[/yellow]")
-        raise typer.Exit(0)
-
-    table = Table(title=f"归档统计数据 {f'({month})' if month else ''}")
-    table.add_column("月份", style="cyan", justify="center")
-    table.add_column("照片数量 (p)", style="green", justify="right")
-    table.add_column("视频数量 (v)", style="magenta", justify="right")
-    table.add_column("其他 (misc)", style="yellow", justify="right")
-    table.add_column("总计", style="bold white", justify="right")
-
-    # 按月份排序
-    for m in sorted(stats_data.keys()):
-        data = stats_data[m]
-        total = data['p'] + data['v'] + data['misc']
-        table.add_row(m, str(data['p']), str(data['v']), str(data['misc']), str(total))
-
-    console.print(table)
 
 
 def main():
