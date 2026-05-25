@@ -53,36 +53,67 @@ class PixExif:
                 dt = str(tags['EXIF DateTimeOriginal'])
                 self._meta.timestamp = dt.replace(':', '').replace(' ', '')
 
+    def _parse_video_time(self, time_str: str) -> str:
+        """尝试多种格式解析视频时间"""
+        formats = [
+            '%Y-%m-%dT%H:%M:%S.%fZ',
+            '%Y-%m-%dT%H:%M:%SZ',
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%dT%H:%M:%S.000000Z'
+        ]
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(time_str, fmt)
+                return dt.strftime('%Y%m%d%H%M%S')
+            except ValueError:
+                continue
+        return None
+
+    def _fallback_timestamp(self):
+        """回退使用文件系统创建时间"""
+        self._meta.timestamp = datetime.fromtimestamp(
+            self._path.stat().st_ctime
+        ).strftime('%Y%m%d%H%M%S')
+
     def _extract_video(self):
         """提取视频元数据"""
         try:
             probe = ffmpeg.probe(str(self._path))
+
+            # 1. 获取 format 层级和 stream 层级的 tags
+            format_tags = probe.get('format', {}).get('tags', {})
             video_stream = next(
-                (
-                    stream
-                    for stream in probe['streams']
-                    if stream['codec_type'] == 'video'
-                ),
-                None,
+                (stream for stream in probe.get('streams', []) if stream.get('codec_type') == 'video'),
+                {}
+            )
+            stream_tags = video_stream.get('tags', {})
+
+            # 2. 提取时间戳
+            creation_time = stream_tags.get('creation_time') or format_tags.get('creation_time')
+            if creation_time:
+                parsed_time = self._parse_video_time(creation_time)
+                if parsed_time:
+                    self._meta.timestamp = parsed_time
+                else:
+                    self._fallback_timestamp()
+            else:
+                self._fallback_timestamp()
+
+            # 3. 提取设备信息
+            model = (
+                stream_tags.get('model') or
+                format_tags.get('model') or
+                format_tags.get('com.apple.quicktime.model')
             )
 
-            if video_stream:
-                # 从视频元数据中提取时间戳
-                if 'tags' in video_stream and 'creation_time' in video_stream['tags']:
-                    dt = datetime.strptime(
-                        video_stream['tags']['creation_time'], '%Y-%m-%dT%H:%M:%S.%fZ'
-                    )
-                    self._meta.timestamp = dt.strftime('%Y%m%d%H%M%S')
+            if model:
+                self._meta.device = str(model).strip().replace(" ", "_")
+            else:
+                self._meta.device = "video_device"
 
-                # 提取设备信息
-                if 'tags' in video_stream and 'model' in video_stream['tags']:
-                    self._meta.device = video_stream['tags']['model'].replace(" ", "_")
-
-        except Exception as e:
-            # 如果提取失败，使用文件创建时间
-            self._meta.timestamp = datetime.fromtimestamp(
-                self._path.stat().st_ctime
-            ).strftime('%Y%m%d%H%M%S')
+        except Exception:
+            # 解析完全失败时回退
+            self._fallback_timestamp()
             self._meta.device = "video_device"
 
     @property
