@@ -1,4 +1,5 @@
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -13,11 +14,12 @@ class PixProcessor:
         self.delete_duplicates = delete_duplicates
 
         # 为当前运行创建一个带时间戳的日志文件
-        from datetime import datetime
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.log_file = self.log_dir / f"px_{timestamp}.log"
 
-    def plan_moves(self, files: List[Path], progress_callback=None) -> List[Dict[str, Any]]:
+    def plan_moves(
+        self, files: List[Path], progress_callback=None
+    ) -> List[Dict[str, Any]]:
         """为文件列表生成移动计划"""
         plan = []
         for file_path in files:
@@ -101,7 +103,7 @@ class PixProcessor:
             target = item["target"]
             status = item["status"]
 
-            if status in ("Move", "Rename (Collision)") and target is not None:
+            if status in ("Move") and target is not None:
                 try:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(source), str(target))

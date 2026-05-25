@@ -22,7 +22,7 @@ class PixMeta:
 
 
 class PixExif:
-    _IMAGES = {".jpg", ".jpeg", ".png", ".cr2", ".arw"}  # , ".heic"
+    _IMAGES = {".jpg", ".jpeg", ".png", ".cr2", ".arw", ".heif"}  # , ".heic"
     _VIDEOS = {".mov", ".mp4", ".avi", ".mkv"}
 
     def __init__(self, path):
