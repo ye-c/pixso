@@ -85,8 +85,12 @@ def process(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("[bold green]正在扫描和解析文件: ", total=len(files_to_process))
-        plan = processor.plan_moves(files_to_process, progress_callback=lambda: progress.advance(task))
+        task = progress.add_task(
+            "[bold green]正在扫描和解析文件: ", total=len(files_to_process)
+        )
+        plan = processor.plan_moves(
+            files_to_process, progress_callback=lambda: progress.advance(task)
+        )
 
     # 打印计划表格
     table = Table(title="文件处理计划")
@@ -140,7 +144,7 @@ def process(
         for _ in processor.execute_plan(plan):
             progress.advance(task)
 
-    console.print("[bold green]执行完成！[/bold green]")
+    console.print("\n[bold green]执行完成！[/bold green]")
 
 
 @app.command()
