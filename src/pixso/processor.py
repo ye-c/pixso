@@ -1,4 +1,5 @@
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -21,30 +22,31 @@ class PixProcessor:
         self, files: List[Path], progress_callback=None
     ) -> List[Dict[str, Any]]:
         """为文件列表生成移动计划"""
-        plan = []
-        for file_path in files:
+
+        def _process_one(file_path: Path) -> Dict[str, Any]:
             try:
                 exif = PixExif(file_path)
                 target_path, status = self._compute_target(file_path, exif)
-                plan.append(
-                    {
-                        "source": file_path,
-                        "target": target_path,
-                        "status": status,
-                        "exif": exif,
-                    }
-                )
+                return {
+                    "source": file_path,
+                    "target": target_path,
+                    "status": status,
+                    "exif": exif,
+                }
             except Exception as e:
-                plan.append(
-                    {
-                        "source": file_path,
-                        "target": None,
-                        "status": f"Error: {e}",
-                        "exif": None,
-                    }
-                )
-            if progress_callback:
-                progress_callback()
+                return {
+                    "source": file_path,
+                    "target": None,
+                    "status": f"Error: {e}",
+                    "exif": None,
+                }
+
+        plan = []
+        with ThreadPoolExecutor() as executor:
+            for result in executor.map(_process_one, files):
+                plan.append(result)
+                if progress_callback:
+                    progress_callback()
         return plan
 
     def _compute_target(self, source_path: Path, exif: PixExif) -> tuple[Path, str]:
