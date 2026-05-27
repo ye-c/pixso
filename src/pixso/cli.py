@@ -15,8 +15,10 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from .dedupe import Deduper
 from .exif import PixExif
 from .processor import PixProcessor
+from .sync import Syncer
 
 app = typer.Typer(help="图片/视频元数据处理与归档工具")
 console = Console()
@@ -148,7 +150,10 @@ def process(
 
 
 @app.command()
-def exif(file: str = typer.Argument(..., help="要查看的文件路径")):
+def exif(
+    file: str = typer.Argument(..., help="要查看的文件路径"),
+    raw: bool = typer.Option(False, "--raw", help="显示完整的原始元数据"),
+):
     """查看文件的元数据解析结果"""
     p = Path(file)
     if not p.is_file():
@@ -157,7 +162,9 @@ def exif(file: str = typer.Argument(..., help="要查看的文件路径")):
 
     try:
         exif = PixExif(p)
-        table = Table(title=f"元数据解析结果: {p.name}")
+
+        # 1. 打印系统解析结果
+        table = Table(title=f"系统解析结果: {p.name}")
         table.add_column("属性", style="cyan")
         table.add_column("值", style="magenta")
 
@@ -165,15 +172,80 @@ def exif(file: str = typer.Argument(..., help="要查看的文件路径")):
         table.add_row("后缀", exif._meta.suffix)
         table.add_row("时间戳 (YYYYMMDDHHMMSS)", exif._meta.timestamp)
         table.add_row("设备型号", exif._meta.device)
-        table.add_row("是否回退时间", str(exif._meta.is_fallback_time))
+        table.add_row("是否未知时间", str(exif._meta.is_unknown_time))
         table.add_row("图片", str(exif.is_image))
         table.add_row("视频", str(exif.is_video))
         table.add_row("最终文件名", exif.rename())
 
         console.print(table)
+
+        # 2. 打印原始标签 (过滤并排序)
+        if raw and hasattr(exif, 'raw_tags') and exif.raw_tags:
+            console.print("\n")
+            raw_table = Table(title="原始元数据 (Raw Tags)")
+            raw_table.add_column("Tag", style="blue")
+            raw_table.add_column("Value", style="white")
+
+            # 按键名排序
+            for k in sorted(exif.raw_tags.keys()):
+                val = str(exif.raw_tags[k])
+                # 如果值太长，截断显示
+                if len(val) > 80:
+                    val = val[:77] + "..."
+                raw_table.add_row(k, val)
+
+            console.print(raw_table)
+
     except Exception as e:
         typer.echo(f"解析失败: {e}", err=True)
         raise typer.Exit(1)
+
+
+@app.command()
+def dedupe(
+    directory: Optional[str] = typer.Option(
+        None, "-d", "--dir", help="指定要扫描的目录（覆盖环境变量）"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="预览操作，不实际移动/删除文件"
+    ),
+):
+    """扫描并清理已归档目录中的重复照片"""
+    target_dir = directory or os.environ.get("PIXSO_TARGET_DIR")
+    if not target_dir:
+        typer.echo(
+            "错误: 必须提供 -d/--dir 参数或设置 PIXSO_TARGET_DIR 环境变量", err=True
+        )
+        raise typer.Exit(1)
+
+    p = Path(target_dir)
+    if not p.is_dir():
+        typer.echo(f"错误: 目录不存在: {target_dir}", err=True)
+        raise typer.Exit(1)
+
+    deduper = Deduper(target_dir=str(p), dry_run=dry_run)
+    deduper.run()
+
+
+@app.command()
+def sync(
+    file: Optional[str] = typer.Option(None, "-f", "--file", help="规范化单个文件"),
+    directory: Optional[str] = typer.Option(None, "-d", "--dir", help="规范化目录"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="预览操作，不实际重命名文件"),
+):
+    """扫描并规范化媒体文件的命名格式"""
+    if not file and not directory:
+        typer.echo("错误: 必须提供 -f/--file 或 -d/--dir 参数", err=True)
+        raise typer.Exit(1)
+
+    target_path = file or directory
+    p = Path(target_path)
+    if not p.exists():
+        typer.echo(f"错误: 路径不存在: {target_path}", err=True)
+        raise typer.Exit(1)
+
+    syncer = Syncer(target_dir=str(p), dry_run=dry_run)
+    syncer.run()
 
 
 def main():
