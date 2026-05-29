@@ -194,7 +194,6 @@ def stats(
     """查看归档库统计信息"""
     target_dir = get_target_dir()
     archive_dir = target_dir / "archive"
-    unknown_dir = target_dir / "unknown"
 
     stats_data = {}
 
@@ -225,7 +224,6 @@ def stats(
                         stats_data[m]["misc"] += 1
 
     scan_dir(archive_dir)
-    scan_dir(unknown_dir)
 
     if not stats_data:
         console.print("[yellow]没有找到归档数据。[/yellow]")
