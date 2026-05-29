@@ -22,9 +22,28 @@ class PixProcessor:
         self, files: List[Path], progress_callback=None
     ) -> List[Dict[str, Any]]:
         """为文件列表生成移动计划"""
+        import threading
         plan = []
+        planned_targets = set()
+        lock = threading.Lock()
+
+        def _process_with_lock(file_path: Path):
+            res = self._process_one(file_path)
+            if res["status"] == ProcessStatus.MOVE and res["target"]:
+                with lock:
+                    if res["target"] in planned_targets:
+                        # 如果同一个计划中已经有文件占用了这个目标路径
+                        res["status"] = (
+                            ProcessStatus.DELETE_DUPLICATE
+                            if self.delete_duplicates
+                            else ProcessStatus.SKIP_DUPLICATE
+                        )
+                    else:
+                        planned_targets.add(res["target"])
+            return res
+
         with ThreadPoolExecutor(max_workers=8) as executor:
-            for result in executor.map(self._process_one, files):
+            for result in executor.map(_process_with_lock, files):
                 plan.append(result)
                 if progress_callback:
                     progress_callback()

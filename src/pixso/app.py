@@ -83,8 +83,13 @@ def import_cmd(
 
     p = Path(path)
     if not p.exists():
-        console.print(f"[red]错误: 路径不存在: {path}[/red]")
-        raise typer.Exit(1)
+        # 尝试相对于 target_dir
+        alt_p = target_dir / path
+        if alt_p.exists():
+            p = alt_p
+        else:
+            console.print(f"[red]错误: 路径不存在: {path}[/red]")
+            raise typer.Exit(1)
 
     files_to_process = get_files(p)
 
@@ -111,7 +116,15 @@ def import_cmd(
     for item in plan:
         target_str = str(item["target"]) if item["target"] else "N/A"
         status = item["status"]
-        if isinstance(status, ProcessStatus):
+
+        # 优化重复文件的显示
+        if status == ProcessStatus.SKIP_DUPLICATE:
+            status_str = "[yellow]Move to Duplicates[/yellow]"
+            target_str = f"[yellow]duplicates/{item['source'].name}[/yellow]"
+        elif status == ProcessStatus.DELETE_DUPLICATE:
+            status_str = "[bold red]Delete Duplicate[/bold red]"
+            target_str = "[bold red]DELETE[/bold red]"
+        elif isinstance(status, ProcessStatus):
             status_str = status.format_rich()
         else:
             # 处理带错误信息的字符串
@@ -155,30 +168,70 @@ def sync(
     path: Optional[str] = typer.Argument(
         None, help="要整理的特定目录路径。如果不提供，则整理整个 PIXSO_TARGET_DIR"
     ),
+    month: Optional[str] = typer.Option(
+        None, "-m", "--month", help="指定月份 (YYYYMM)"
+    ),
+    photo: bool = typer.Option(False, "-p", "--photo", help="仅处理照片"),
+    video: bool = typer.Option(False, "-v", "--video", help="仅处理视频"),
     dry_run: bool = typer.Option(False, "--dry-run", help="预览操作，不实际执行"),
     yes: bool = typer.Option(False, "-y", "--yes", help="跳过确认，直接执行"),
+    delete_duplicates: bool = typer.Option(
+        False, "--delete-duplicates", help="直接删除重复文件，而不是移入 duplicates 目录"
+    ),
 ):
     """整理并重建归档库（应用新命名规范并清理重复文件）"""
     target_dir = get_target_dir()
 
-    scan_path = Path(path) if path else target_dir
-    if not scan_path.exists():
-        console.print(f"[red]错误: 路径不存在: {scan_path}[/red]")
-        raise typer.Exit(1)
+    files_to_process = []
+    if path:
+        scan_path = Path(path)
+        if not scan_path.exists():
+            # 尝试相对于 target_dir
+            alt_path = target_dir / path
+            if alt_path.exists():
+                scan_path = alt_path
+            else:
+                console.print(f"[red]错误: 路径不存在: {path}[/red]")
+                raise typer.Exit(1)
+        files_to_process = get_files(scan_path)
+    elif month:
+        # 同时检查 archive 和 snapshot 目录下的对应月份
+        for sub_dir in ["archive", "snapshot"]:
+            m_path = target_dir / sub_dir / month
+            if m_path.exists():
+                files_to_process.extend(get_files(m_path))
+        if not files_to_process:
+            console.print(f"[yellow]在归档库中未找到月份为 {month} 的文件。[/yellow]")
+            raise typer.Exit(0)
+    else:
+        if not yes:
+            if not Confirm.ask(
+                f"[bold red]警告: 将重新整理整个归档库 ({target_dir})，是否继续？[/bold red]"
+            ):
+                raise typer.Abort()
+        files_to_process = get_files(target_dir)
 
-    if not path and not yes:
-        if not Confirm.ask(
-            f"[bold red]警告: 将重新整理整个归档库 ({target_dir})，是否继续？[/bold red]"
-        ):
-            raise typer.Abort()
-
-    files_to_process = get_files(scan_path)
     if not files_to_process:
         console.print("没有找到需要整理的文件。")
         raise typer.Exit(0)
 
+    # 根据类型过滤
+    if photo or video:
+        filtered = []
+        for f in files_to_process:
+            ext = f.suffix.lower()
+            if photo and ext in config.IMAGES:
+                filtered.append(f)
+            elif video and ext in config.VIDEOS:
+                filtered.append(f)
+        files_to_process = filtered
+
+    if not files_to_process:
+        console.print("经过类型过滤后，没有找到需要整理的文件。")
+        raise typer.Exit(0)
+
     # sync 模式下，重复文件默认移入 duplicates
-    processor = PixProcessor(str(target_dir), delete_duplicates=False)
+    processor = PixProcessor(str(target_dir), delete_duplicates=delete_duplicates)
 
     with get_progress(
         "[bold green]正在分析归档库: ", len(files_to_process)
@@ -205,12 +258,25 @@ def sync(
 
     for item in active_plan[:100]:  # 最多显示100行
         status = item["status"]
-        status_str = (
-            status.format_rich() if isinstance(status, ProcessStatus) else str(status)
+        source_rel = str(item["source"].relative_to(target_dir))
+        target_rel = (
+            str(item["target"].relative_to(target_dir)) if item["target"] else "N/A"
         )
+
+        if status == ProcessStatus.SKIP_DUPLICATE:
+            status_str = "[yellow]Move to Duplicates[/yellow]"
+            target_rel = f"[yellow]duplicates/{item['source'].name}[/yellow]"
+        elif status == ProcessStatus.DELETE_DUPLICATE:
+            status_str = "[bold red]Delete Duplicate[/bold red]"
+            target_rel = "[bold red]DELETE[/bold red]"
+        elif isinstance(status, ProcessStatus):
+            status_str = status.format_rich()
+        else:
+            status_str = str(status)
+
         table.add_row(
-            str(item["source"].relative_to(target_dir)),
-            str(item["target"].relative_to(target_dir)) if item["target"] else "N/A",
+            source_rel,
+            target_rel,
             status_str,
         )
 
@@ -237,14 +303,83 @@ def sync(
 
 
 @app.command()
+def stats(
+    month: Optional[str] = typer.Argument(None, help="要查看的特定月份 (格式: YYYYMM)"),
+):
+    """查看归档库统计信息"""
+    target_dir = get_target_dir()
+    archive_dir = target_dir / "archive"
+    snapshot_dir = target_dir / "snapshot"
+
+    stats_data = {}
+
+    def scan_dir(base_dir: Path):
+        if not base_dir.exists():
+            return
+        for month_dir in base_dir.iterdir():
+            if not month_dir.is_dir() or not month_dir.name.isdigit():
+                continue
+
+            m = month_dir.name
+            if month and m != month:
+                continue
+
+            if m not in stats_data:
+                stats_data[m] = {"p": 0, "v": 0, "misc": 0}
+
+            for root, _, files in os.walk(month_dir):
+                for f in files:
+                    if f.startswith((".", "._")):
+                        continue
+                    ext = Path(f).suffix.lower()
+                    if ext in config.IMAGES:
+                        stats_data[m]["p"] += 1
+                    elif ext in config.VIDEOS:
+                        stats_data[m]["v"] += 1
+                    else:
+                        stats_data[m]["misc"] += 1
+
+    scan_dir(archive_dir)
+    scan_dir(snapshot_dir)
+
+    if not stats_data:
+        console.print("[yellow]没有找到归档数据。[/yellow]")
+        return
+
+    table = Table(title="归档统计信息")
+    table.add_column("月份", style="cyan")
+    table.add_column("图片 (p)", style="green", justify="right")
+    table.add_column("视频 (v)", style="magenta", justify="right")
+    table.add_column("其他", style="white", justify="right")
+    table.add_column("总计", style="bold blue", justify="right")
+
+    for m in sorted(stats_data.keys(), reverse=True):
+        d = stats_data[m]
+        total = d["p"] + d["v"] + d["misc"]
+        table.add_row(m, str(d["p"]), str(d["v"]), str(d["misc"]), str(total))
+
+    console.print(table)
+
+
+@app.command()
 def info(
     file: str = typer.Argument(..., help="要查看的文件路径"),
 ):
     """查看文件的元数据解析结果与预期归档路径"""
     p = Path(file)
     if not p.is_file():
-        console.print(f"[red]错误: 文件不存在: {file}[/red]")
-        raise typer.Exit(1)
+        # 尝试相对于 target_dir
+        try:
+            target_dir = get_target_dir()
+            alt_p = target_dir / file
+            if alt_p.is_file():
+                p = alt_p
+            else:
+                console.print(f"[red]错误: 文件不存在: {file}[/red]")
+                raise typer.Exit(1)
+        except Exception:
+            console.print(f"[red]错误: 文件不存在: {file}[/red]")
+            raise typer.Exit(1)
 
     try:
         exif = PixExif(p)

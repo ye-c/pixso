@@ -14,6 +14,7 @@ DEFAULT_DEVICE_MAP = {
     "ILCE-7RM4": "A7R4",
     "ILCE-7M4": "A7M4",
     "GoPro": "GoPro",
+    "Canon_EOS_550D": "CanonEOS550D",
 }
 
 
