@@ -50,7 +50,18 @@ class PixExif:
             raise ValueError(f"不支持的格式: {self._path.suffix}")
 
         if not self._meta.timestamp:
-            self._meta.is_unknown_time = True
+            # 检查是否有其他可信元数据（GPS、设备型号、镜头信息等）
+            has_trusted_metadata = any(
+                k.startswith(('GPS ', 'Image Model', 'EXIF Lens', 'EXIF OffsetTime'))
+                for k in self.raw_tags.keys()
+            )
+
+            # 如果有可信元数据，我们信任其文件系统时间作为归档依据
+            if has_trusted_metadata:
+                self._meta.is_unknown_time = False
+            else:
+                self._meta.is_unknown_time = True
+
             self._fallback_timestamp()
 
     def _extract_image(self):
@@ -70,9 +81,15 @@ class PixExif:
                     self._meta.device = model
 
             # 提取拍摄时间
-            if 'EXIF DateTimeOriginal' in tags:
-                dt = str(tags['EXIF DateTimeOriginal'])
-                self._meta.timestamp = dt.replace(':', '').replace(' ', '')
+            # 优先级: 拍摄时间 > 数字化时间 > 修改时间
+            dt = (
+                tags.get('EXIF DateTimeOriginal')
+                or tags.get('EXIF DateTimeDigitized')
+                or tags.get('Image DateTime')
+            )
+
+            if dt:
+                self._meta.timestamp = str(dt).replace(':', '').replace(' ', '')
 
     def _parse_video_time(self, time_str: str) -> str:
         """尝试多种格式解析视频时间，并处理 UTC+8 时区偏移"""
@@ -128,8 +145,8 @@ class PixExif:
             # 2. 提取时间戳
             creation_time = (
                 format_tags.get('com.apple.quicktime.creationdate')
-                or stream_tags.get('creation_time')
                 or format_tags.get('creation_time')
+                or stream_tags.get('creation_time')
             )
             if creation_time:
                 parsed_time = self._parse_video_time(creation_time)
@@ -182,7 +199,9 @@ class PixExif:
     def get_device_short(self) -> str:
         """获取简短的设备代号，如果没有映射则返回原名"""
         device = self._meta.device
-        return config.DEVICE_MAP.get(device, device)
+        return config.DEVICE_MAP.get(
+            device, device.replace("-", "").replace("_", "").replace(" ", "")
+        )
 
     def rename(self):
         """生成标准化的文件名: {timestamp}_{device_short}_{hash8}{suffix}"""

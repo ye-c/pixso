@@ -5,17 +5,7 @@ from typing import Dict, Set
 # 默认配置
 DEFAULT_IMAGES = {".jpg", ".jpeg", ".png", ".cr2", ".arw", ".heif", ".heic"}
 DEFAULT_VIDEOS = {".mov", ".mp4", ".avi", ".mkv"}
-DEFAULT_DEVICE_MAP = {
-    "iPhone_15_Pro_Max": "iPone15PM",
-    "iPhone_15_Pro": "iPone15P",
-    "iPhone_15": "iPone15",
-    "iPhone_14_Pro": "iPone14P",
-    "ILCE-7CM2": "A7C2",
-    "ILCE-7RM4": "A7R4",
-    "ILCE-7M4": "A7M4",
-    "GoPro": "GoPro",
-    "Canon_EOS_550D": "CanonEOS550D",
-}
+DEFAULT_DEVICE_MAP = {"ILCE-7CM2": "A7C2", "ILCE-7RM4": "A7R4", "ILCE-7M4": "A7M4"}
 
 
 def get_config_set(env_name: str, default: Set[str]) -> Set[str]:

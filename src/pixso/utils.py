@@ -1,8 +1,25 @@
 import hashlib
 import json
+import os
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import List
+
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
+
+from .config import config
+
+console = Console()
 
 
 class ProcessStatus(str, Enum):
@@ -31,6 +48,49 @@ class ProcessStatus(str, Enum):
         if self == ProcessStatus.MOVE or "Move" in status_str:
             return f"[green]{status_str}[/green]"
         return status_str
+
+
+def get_target_dir() -> Path:
+    """获取并验证归档根目录"""
+    target_dir = os.environ.get("PIXSO_TARGET_DIR")
+    if not target_dir:
+        console.print("[red]错误: 必须设置 PIXSO_TARGET_DIR 环境变量[/red]")
+        import typer
+        raise typer.Exit(1)
+    return Path(target_dir)
+
+
+def get_progress(description: str, total: int) -> Progress:
+    """统一的进度条配置"""
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        MofNCompleteColumn(),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    )
+    progress.add_task(description, total=total)
+    return progress
+
+
+def get_files(path: Path) -> List[Path]:
+    """递归获取目录下所有支持的文件 (单次遍历)"""
+    files = []
+    if path.is_file():
+        if not path.name.startswith((".", "._")):
+            files.append(path)
+    elif path.is_dir():
+        for f in path.rglob("*"):
+            if (
+                f.is_file()
+                and f.suffix.lower() in config.ALL_EXTENSIONS
+                and not f.name.startswith((".", "._"))
+                and "duplicates" not in f.parts
+            ):
+                files.append(f)
+    return files
 
 
 def get_file_hash(path: Path, chunk_size: int = 8192) -> str:
