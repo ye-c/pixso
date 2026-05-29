@@ -73,12 +73,8 @@ class PixProcessor:
         source_path = exif._path
 
         # 确定类别
-        if exif._meta.is_unknown_time:
-            category = "unknown"
-            date_folder = "000000"
-        else:
-            category = "archive"
-            date_folder = exif._meta.timestamp[:6]
+        category = "unknown" if exif._meta.is_unknown_time else "archive"
+        date_folder = exif._meta.timestamp[:6]
 
         # 确定媒体类型
         if exif.is_image:
@@ -89,10 +85,7 @@ class PixProcessor:
             media_type = "misc"
 
         # 基础目标路径
-        if category == "unknown":
-            base_dir = self.target_dir / category
-        else:
-            base_dir = self.target_dir / category / date_folder / media_type
+        base_dir = self.target_dir / category / date_folder / media_type
 
         # 获取带 Hash8 的文件名
         target_name = exif.rename()
