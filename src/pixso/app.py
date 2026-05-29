@@ -19,6 +19,7 @@ from rich.table import Table
 from .exif import PixExif
 from .processor import PixProcessor
 from .utils import ProcessStatus
+from .config import config
 
 app = typer.Typer(help="图片/视频元数据处理与归档工具", no_args_is_help=True)
 console = Console()
@@ -35,7 +36,7 @@ def get_target_dir() -> Path:
 
 def get_progress(description: str, total: int) -> Progress:
     """统一的进度条配置"""
-    return Progress(
+    progress = Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         MofNCompleteColumn(),
@@ -44,6 +45,8 @@ def get_progress(description: str, total: int) -> Progress:
         TimeRemainingColumn(),
         console=console,
     )
+    progress.add_task(description, total=total)
+    return progress
 
 
 def get_files(path: Path) -> List[Path]:
@@ -53,11 +56,10 @@ def get_files(path: Path) -> List[Path]:
         if not path.name.startswith((".", "._")):
             files.append(path)
     elif path.is_dir():
-        extensions = {ext.lower() for ext in PixExif._IMAGES | PixExif._VIDEOS}
         for f in path.rglob("*"):
             if (
                 f.is_file()
-                and f.suffix.lower() in extensions
+                and f.suffix.lower() in config.ALL_EXTENSIONS
                 and not f.name.startswith((".", "._"))
                 and "duplicates" not in f.parts
             ):
@@ -108,13 +110,16 @@ def import_cmd(
 
     for item in plan:
         target_str = str(item["target"]) if item["target"] else "N/A"
-        status_str = str(item["status"])
-        if ProcessStatus.ERROR in status_str:
-            status_str = f"[red]{status_str}[/red]"
-        elif "Skip" in status_str:
-            status_str = f"[yellow]{status_str}[/yellow]"
-        elif "Delete" in status_str:
-            status_str = f"[bold red]{status_str}[/bold red]"
+        status = item["status"]
+        if isinstance(status, ProcessStatus):
+            status_str = status.format_rich()
+        else:
+            # 处理带错误信息的字符串
+            status_str = str(status)
+            if "Error" in status_str:
+                status_str = f"[red]{status_str}[/red]"
+            elif "Move" in status_str:
+                status_str = f"[green]{status_str}[/green]"
 
         table.add_row(str(item["source"]), target_str, status_str)
 
@@ -199,10 +204,12 @@ def sync(
     table.add_column("操作", style="green")
 
     for item in active_plan[:100]:  # 最多显示100行
+        status = item["status"]
+        status_str = status.format_rich() if isinstance(status, ProcessStatus) else str(status)
         table.add_row(
             str(item["source"].relative_to(target_dir)),
             str(item["target"].relative_to(target_dir)) if item["target"] else "N/A",
-            str(item["status"]),
+            status_str,
         )
 
     if len(active_plan) > 100:

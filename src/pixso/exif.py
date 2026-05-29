@@ -5,6 +5,7 @@ from pathlib import Path
 import ffmpeg
 from exifread import process_file
 
+from .config import config
 from .utils import get_hash8
 
 
@@ -22,20 +23,6 @@ class PixMeta:
 
 
 class PixExif:
-    _IMAGES = {".jpg", ".jpeg", ".png", ".cr2", ".arw", ".heif"}  # , ".heic"
-    _VIDEOS = {".mov", ".mp4", ".avi", ".mkv"}
-
-    # 设备名称映射表
-    _DEVICE_MAP = {
-        "iPhone_15_Pro": "iP15P",
-        "iPhone_15_Pro_Max": "iP15PM",
-        "iPhone_14_Pro": "iP14P",
-        "ILCE-7CM2": "A7C2",
-        "ILCE-7RM4": "A7R4",
-        "ILCE-7M4": "A7M4",
-        "GoPro": "GoPro",
-    }
-
     def __init__(self, path):
         self._path = Path(path)
         self._hash8 = None
@@ -186,25 +173,16 @@ class PixExif:
 
     @property
     def is_image(self) -> bool:
-        return self._path.suffix.lower() in self._IMAGES
+        return self._path.suffix.lower() in config.IMAGES
 
     @property
     def is_video(self) -> bool:
-        return self._path.suffix.lower() in self._VIDEOS
+        return self._path.suffix.lower() in config.VIDEOS
 
     def get_device_short(self) -> str:
-        """获取简短的设备代号"""
+        """获取简短的设备代号，如果没有映射则返回原名"""
         device = self._meta.device
-        # 尝试精确匹配
-        if device in self._DEVICE_MAP:
-            return self._DEVICE_MAP[device]
-
-        # 尝试模糊匹配 (部分匹配)
-        for full, short in self._DEVICE_MAP.items():
-            if full.lower() in device.lower() or device.lower() in full.lower():
-                return short
-
-        return "unknown"
+        return config.DEVICE_MAP.get(device, device)
 
     def rename(self):
         """生成标准化的文件名: {timestamp}_{device_short}_{hash8}{suffix}"""
