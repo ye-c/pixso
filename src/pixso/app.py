@@ -121,10 +121,9 @@ def sync(
             mode_desc = f"导入外部路径: [cyan]{p}[/cyan]"
 
     elif month:
-        for sub_dir in ["archive", "snapshot"]:
-            m_path = target_dir / sub_dir / month
-            if m_path.exists():
-                files_to_process.extend(get_files(m_path))
+        m_path = target_dir / "archive" / month
+        if m_path.exists():
+            files_to_process.extend(get_files(m_path))
         if not files_to_process:
             console.print(f"[yellow]在归档库中未找到月份为 {month} 的文件。[/yellow]")
             raise typer.Exit(0)
@@ -194,7 +193,6 @@ def stats(
     """查看归档库统计信息"""
     target_dir = get_target_dir()
     archive_dir = target_dir / "archive"
-    snapshot_dir = target_dir / "snapshot"
 
     stats_data = {}
 
@@ -225,7 +223,6 @@ def stats(
                         stats_data[m]["misc"] += 1
 
     scan_dir(archive_dir)
-    scan_dir(snapshot_dir)
 
     if not stats_data:
         console.print("[yellow]没有找到归档数据。[/yellow]")
