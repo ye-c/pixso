@@ -254,12 +254,30 @@ def info(
         table.add_column("值", style="magenta")
 
         # 系统字段 (高亮显示)
-        table.add_row("[bold yellow]时间戳[/bold yellow]", f"[bold yellow]{exif._meta.timestamp}[/bold yellow]")
-        table.add_row("[bold yellow]设备 (原始)[/bold yellow]", f"[bold yellow]{exif._meta.device}[/bold yellow]")
-        table.add_row("[bold yellow]设备 (简短)[/bold yellow]", f"[bold yellow]{exif.get_device_short()}[/bold yellow]")
-        table.add_row("[bold yellow]Hash8[/bold yellow]", f"[bold yellow]{exif.get_hash8()}[/bold yellow]")
-        table.add_row("[bold yellow]是否未知时间[/bold yellow]", f"[bold yellow]{exif._meta.is_unknown_time}[/bold yellow]")
-        table.add_row("[bold yellow]最终文件名[/bold yellow]", f"[bold yellow]{exif.rename()}[/bold yellow]")
+        table.add_row(
+            "[bold yellow]时间戳[/bold yellow]",
+            f"[bold yellow]{exif._meta.timestamp}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]设备 (原始)[/bold yellow]",
+            f"[bold yellow]{exif._meta.device}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]设备 (简短)[/bold yellow]",
+            f"[bold yellow]{exif.get_device_short()}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]Hash8[/bold yellow]",
+            f"[bold yellow]{exif.get_hash8()}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]是否未知时间[/bold yellow]",
+            f"[bold yellow]{exif._meta.is_unknown_time}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]最终文件名[/bold yellow]",
+            f"[bold yellow]{exif.rename()}[/bold yellow]",
+        )
 
         if exif.raw_tags:
             table.add_section()
