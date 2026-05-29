@@ -16,10 +16,10 @@ from rich.progress import (
 from rich.prompt import Confirm
 from rich.table import Table
 
+from .config import config
 from .exif import PixExif
 from .processor import PixProcessor
 from .utils import ProcessStatus
-from .config import config
 
 app = typer.Typer(help="图片/视频元数据处理与归档工具", no_args_is_help=True)
 console = Console()
@@ -205,7 +205,9 @@ def sync(
 
     for item in active_plan[:100]:  # 最多显示100行
         status = item["status"]
-        status_str = status.format_rich() if isinstance(status, ProcessStatus) else str(status)
+        status_str = (
+            status.format_rich() if isinstance(status, ProcessStatus) else str(status)
+        )
         table.add_row(
             str(item["source"].relative_to(target_dir)),
             str(item["target"].relative_to(target_dir)) if item["target"] else "N/A",
@@ -237,7 +239,6 @@ def sync(
 @app.command()
 def info(
     file: str = typer.Argument(..., help="要查看的文件路径"),
-    raw: bool = typer.Option(False, "--raw", help="显示完整的原始元数据"),
 ):
     """查看文件的元数据解析结果与预期归档路径"""
     p = Path(file)
@@ -252,25 +253,23 @@ def info(
         table.add_column("属性", style="cyan")
         table.add_column("值", style="magenta")
 
-        table.add_row("时间戳", exif._meta.timestamp)
-        table.add_row("设备 (原始)", exif._meta.device)
-        table.add_row("设备 (简短)", exif.get_device_short())
-        table.add_row("Hash8", exif.get_hash8())
-        table.add_row("是否未知时间", str(exif._meta.is_unknown_time))
-        table.add_row("最终文件名", exif.rename())
+        # 系统字段 (高亮显示)
+        table.add_row("[bold yellow]时间戳[/bold yellow]", f"[bold yellow]{exif._meta.timestamp}[/bold yellow]")
+        table.add_row("[bold yellow]设备 (原始)[/bold yellow]", f"[bold yellow]{exif._meta.device}[/bold yellow]")
+        table.add_row("[bold yellow]设备 (简短)[/bold yellow]", f"[bold yellow]{exif.get_device_short()}[/bold yellow]")
+        table.add_row("[bold yellow]Hash8[/bold yellow]", f"[bold yellow]{exif.get_hash8()}[/bold yellow]")
+        table.add_row("[bold yellow]是否未知时间[/bold yellow]", f"[bold yellow]{exif._meta.is_unknown_time}[/bold yellow]")
+        table.add_row("[bold yellow]最终文件名[/bold yellow]", f"[bold yellow]{exif.rename()}[/bold yellow]")
 
-        console.print(table)
-
-        if raw and exif.raw_tags:
-            raw_table = Table(title="原始元数据")
-            raw_table.add_column("Tag", style="blue")
-            raw_table.add_column("Value", style="white")
+        if exif.raw_tags:
+            table.add_section()
             for k in sorted(exif.raw_tags.keys()):
                 val = str(exif.raw_tags[k])
                 if len(val) > 80:
                     val = val[:77] + "..."
-                raw_table.add_row(k, val)
-            console.print(raw_table)
+                table.add_row(k, val)
+
+        console.print(table)
 
     except Exception as e:
         console.print(f"[red]解析失败: {e}[/red]")
