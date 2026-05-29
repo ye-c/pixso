@@ -6,7 +6,7 @@ import ffmpeg
 from exifread import process_file
 
 from .config import config
-from .utils import get_hash8
+from .utils import Category, MediaType, get_hash8
 
 
 @dataclass
@@ -244,3 +244,19 @@ class PixExif:
         device_short = self.get_device_short()
         hash8 = self.get_hash8()
         return f"{self._meta.timestamp}_{device_short}_{hash8}{self._meta.suffix}"
+
+    @property
+    def category(self) -> Category:
+        return Category.UNKNOWN if self._meta.is_unknown_time else Category.ARCHIVE
+
+    @property
+    def media_type(self) -> MediaType:
+        if self.is_image:
+            return MediaType.PHOTO
+        if self.is_video:
+            return MediaType.VIDEO
+        return MediaType.MISC
+
+    @property
+    def month(self) -> str:
+        return self._meta.timestamp[:6]

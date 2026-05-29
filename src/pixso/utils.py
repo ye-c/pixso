@@ -22,6 +22,17 @@ from .config import config
 console = Console()
 
 
+class Category(str, Enum):
+    ARCHIVE = "archive"
+    UNKNOWN = "unknown"
+
+
+class MediaType(str, Enum):
+    PHOTO = "p"
+    VIDEO = "v"
+    MISC = "misc"
+
+
 class ProcessStatus(str, Enum):
     MOVE = "Move"
     SKIP_ALREADY_ORGANIZED = "Skip (Already Organized)"
@@ -56,6 +67,7 @@ def get_target_dir() -> Path:
     if not target_dir:
         console.print("[red]错误: 必须设置 PIXSO_TARGET_DIR 环境变量[/red]")
         import typer
+
         raise typer.Exit(1)
     return Path(target_dir)
 

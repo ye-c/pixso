@@ -10,6 +10,8 @@ from .config import config
 from .exif import PixExif
 from .processor import PixProcessor
 from .utils import (
+    Category,
+    MediaType,
     ProcessStatus,
     console,
     get_files,
@@ -17,7 +19,101 @@ from .utils import (
     get_target_dir,
 )
 
+from collections import defaultdict
+from rich.panel import Panel
+
 app = typer.Typer(help="图片/视频元数据处理与归档工具", no_args_is_help=True)
+
+
+def print_plan_summary(plan: List[Dict[str, Any]], target_dir: Path):
+    """打印执行计划摘要"""
+    day_stats = defaultdict(
+        lambda: {"archive": 0, "unknown": 0, "duplicate": 0, "p": 0, "v": 0, "misc": 0}
+    )
+    unknown_samples = []
+    total_count = len(plan)
+
+    for item in plan:
+        exif = item.get("exif")
+        status = item.get("status")
+
+        if not exif:
+            continue
+
+        # 按天分组 (YYYY-MM-DD)
+        ts = exif._meta.timestamp
+        day = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
+
+        # 统计操作类型
+        if status in (ProcessStatus.SKIP_DUPLICATE, ProcessStatus.DELETE_DUPLICATE):
+            day_stats[day]["duplicate"] += 1
+        elif exif.category == Category.UNKNOWN:
+            day_stats[day]["unknown"] += 1
+            if len(unknown_samples) < 10:
+                unknown_samples.append(item)
+        else:
+            day_stats[day]["archive"] += 1
+
+        # 统计媒体类型
+        day_stats[day][exif.media_type] += 1
+
+    # 1. 打印按天统计的表格
+    table = Table(title="执行计划摘要 (按天统计)")
+    table.add_column("日期", style="cyan")
+    table.add_column("正常归档", style="green", justify="right")
+    table.add_column("未知时间", style="yellow", justify="right")
+    table.add_column("重复文件", style="red", justify="right")
+    table.add_column("P/V/M", style="dim", justify="right")
+    table.add_column("当日总计", style="bold", justify="right")
+
+    for day in sorted(day_stats.keys()):
+        stats = day_stats[day]
+        p_v_m = f"{stats[MediaType.PHOTO]}/{stats[MediaType.VIDEO]}/{stats[MediaType.MISC]}"
+        day_total = stats["archive"] + stats["unknown"] + stats["duplicate"]
+        table.add_row(
+            day,
+            str(stats["archive"]) if stats["archive"] > 0 else "-",
+            f"[yellow]{stats['unknown']}[/yellow]" if stats["unknown"] > 0 else "-",
+            f"[red]{stats['duplicate']}[/red]" if stats["duplicate"] > 0 else "-",
+            p_v_m,
+            str(day_total),
+        )
+
+    console.print(table)
+
+    # 2. 如果有未知文件，打印示例
+    if unknown_samples:
+        console.print("\n[yellow]▼ 未知时间文件示例 (前 10 个):[/yellow]")
+        sample_table = Table(box=None)
+        sample_table.add_column("源文件", style="dim", width=40)
+        sample_table.add_column("➔", justify="center")
+        sample_table.add_column("目标路径", style="yellow")
+
+        for item in unknown_samples:
+            source = item["source"]
+            target = item["target"]
+            try:
+                src_display = str(source.relative_to(Path.cwd()))
+            except ValueError:
+                src_display = source.name
+
+            try:
+                tgt_display = str(target.relative_to(target_dir))
+            except ValueError:
+                tgt_display = str(target)
+
+            sample_table.add_row(src_display, "→", tgt_display)
+        console.print(sample_table)
+
+    console.print(
+        Panel(
+            f"共计待处理文件: [bold cyan]{total_count}[/bold cyan] "
+            f"(正常: [green]{sum(s['archive'] for s in day_stats.values())}[/green], "
+            f"未知: [yellow]{sum(s['unknown'] for s in day_stats.values())}[/yellow], "
+            f"重复: [red]{sum(s['duplicate'] for s in day_stats.values())}[/red])",
+            expand=False,
+        )
+    )
 
 
 def print_plan_table(
@@ -121,7 +217,7 @@ def sync(
             mode_desc = f"导入外部路径: [cyan]{p}[/cyan]"
 
     elif month:
-        for sub_dir in ["archive", "unknown"]:
+        for sub_dir in [Category.ARCHIVE, Category.UNKNOWN]:
             m_path = target_dir / sub_dir / month
             if m_path.exists():
                 files_to_process.extend(get_files(m_path))
@@ -152,7 +248,7 @@ def sync(
 
     # 3. 分析与计划
     processor = PixProcessor(str(target_dir), delete_duplicates=delete_duplicates)
-    console.print(f"[bold]模式: {mode_desc}[/bold]")
+    console.print(f"[bold]模式 - {mode_desc}[/bold]")
 
     with get_progress("[bold green]正在分析文件: ", len(files_to_process)) as progress:
         task_id = progress.tasks[0].id
@@ -170,7 +266,10 @@ def sync(
         raise typer.Exit(0)
 
     # 5. 预览与执行
-    print_plan_table(active_plan, target_dir, title="同步执行计划")
+    if len(active_plan) > 20:
+        print_plan_summary(active_plan, target_dir)
+    else:
+        print_plan_table(active_plan, target_dir, title="同步执行计划")
 
     if dry_run:
         console.print("[bold yellow]Dry-run 模式: 未执行任何文件操作。[/bold yellow]")
@@ -193,7 +292,6 @@ def stats(
 ):
     """查看归档库统计信息"""
     target_dir = get_target_dir()
-    archive_dir = target_dir / "archive"
 
     stats_data = {}
 
@@ -209,21 +307,33 @@ def stats(
                 continue
 
             if m not in stats_data:
-                stats_data[m] = {"p": 0, "v": 0, "misc": 0}
+                stats_data[m] = {
+                    MediaType.PHOTO: 0,
+                    MediaType.VIDEO: 0,
+                    MediaType.MISC: 0,
+                }
 
             for root, _, files in os.walk(month_dir):
                 for f in files:
                     if f.startswith((".", "._")):
                         continue
-                    ext = Path(f).suffix.lower()
-                    if ext in config.IMAGES:
-                        stats_data[m]["p"] += 1
-                    elif ext in config.VIDEOS:
-                        stats_data[m]["v"] += 1
-                    else:
-                        stats_data[m]["misc"] += 1
 
-    scan_dir(archive_dir)
+                    p = Path(root) / f
+                    try:
+                        exif = PixExif(p)
+                        stats_data[m][exif.media_type] += 1
+                    except Exception:
+                        # 如果解析失败，简单通过后缀回退
+                        ext = p.suffix.lower()
+                        if ext in config.IMAGES:
+                            stats_data[m][MediaType.PHOTO] += 1
+                        elif ext in config.VIDEOS:
+                            stats_data[m][MediaType.VIDEO] += 1
+                        else:
+                            stats_data[m][MediaType.MISC] += 1
+
+    for cat in [Category.ARCHIVE, Category.UNKNOWN]:
+        scan_dir(target_dir / cat)
 
     if not stats_data:
         console.print("[yellow]没有找到归档数据。[/yellow]")
@@ -238,8 +348,14 @@ def stats(
 
     for m in sorted(stats_data.keys(), reverse=True):
         d = stats_data[m]
-        total = d["p"] + d["v"] + d["misc"]
-        table.add_row(m, str(d["p"]), str(d["v"]), str(d["misc"]), str(total))
+        total = d[MediaType.PHOTO] + d[MediaType.VIDEO] + d[MediaType.MISC]
+        table.add_row(
+            m,
+            str(d[MediaType.PHOTO]),
+            str(d[MediaType.VIDEO]),
+            str(d[MediaType.MISC]),
+            str(total),
+        )
 
     console.print(table)
 

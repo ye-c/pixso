@@ -1,4 +1,5 @@
 import shutil
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -18,28 +19,51 @@ class PixProcessor:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.log_file = self.log_dir / f"px_{timestamp}.log"
 
+    def _safe_resolve(self, path: Path) -> Path:
+        """安全地解析路径，防止因权限或符号链接问题抛出异常"""
+        try:
+            return path.resolve()
+        except Exception:
+            return path.absolute()
+
     def plan_moves(
         self, files: List[Path], progress_callback=None
     ) -> List[Dict[str, Any]]:
         """为文件列表生成移动计划"""
-        import threading
+
+        # 1. 预处理：按绝对路径去重，防止同一个文件被处理两次
+        unique_files = {}
+        for f in files:
+            try:
+                unique_files[f.resolve()] = f
+            except Exception:
+                unique_files[f] = f
+        files = list(unique_files.values())
+
         plan = []
-        planned_targets = set()
+        planned_targets = {}  # target_path -> source_path
         lock = threading.Lock()
 
         def _process_with_lock(file_path: Path):
             res = self._process_one(file_path)
-            if res["status"] == ProcessStatus.MOVE and res["target"]:
+            target = res["target"]
+            if res["status"] == ProcessStatus.MOVE and target:
                 with lock:
-                    if res["target"] in planned_targets:
+                    if target in planned_targets:
                         # 如果同一个计划中已经有文件占用了这个目标路径
-                        res["status"] = (
-                            ProcessStatus.DELETE_DUPLICATE
-                            if self.delete_duplicates
-                            else ProcessStatus.SKIP_DUPLICATE
-                        )
+                        # 检查是否是同一个物理文件
+                        if self._safe_resolve(
+                            planned_targets[target]
+                        ) == self._safe_resolve(file_path):
+                            res["status"] = ProcessStatus.SKIP_ALREADY_ORGANIZED
+                        else:
+                            res["status"] = (
+                                ProcessStatus.DELETE_DUPLICATE
+                                if self.delete_duplicates
+                                else ProcessStatus.SKIP_DUPLICATE
+                            )
                     else:
-                        planned_targets.add(res["target"])
+                        planned_targets[target] = file_path
             return res
 
         with ThreadPoolExecutor(max_workers=8) as executor:
@@ -72,34 +96,25 @@ class PixProcessor:
         """计算目标路径并处理冲突"""
         source_path = exif._path
 
-        # 确定类别
-        category = "unknown" if exif._meta.is_unknown_time else "archive"
-        date_folder = exif._meta.timestamp[:6]
-
-        # 确定媒体类型
-        if exif.is_image:
-            media_type = "p"
-        elif exif.is_video:
-            media_type = "v"
-        else:
-            media_type = "misc"
-
         # 基础目标路径
-        base_dir = self.target_dir / category / date_folder / media_type
+        base_dir = self.target_dir / exif.category / exif.month / exif.media_type
 
         # 获取带 Hash8 的文件名
         target_name = exif.rename()
         target_path = base_dir / target_name
 
         # 检查是否已经是归档好的文件
-        if (
-            source_path.name == target_path.name
-            and source_path.parent.resolve() == target_path.parent.resolve()
-        ):
+        if source_path.name == target_path.name and self._safe_resolve(
+            source_path.parent
+        ) == self._safe_resolve(target_path.parent):
             return target_path, ProcessStatus.SKIP_ALREADY_ORGANIZED
 
         # 冲突处理：由于文件名带 Hash8，同名即代表内容相同（碰撞概率极低）
         if target_path.exists():
+            # 特殊处理：如果源文件就在目标位置（比如只是大小写不同，或者inode相同）
+            if self._safe_resolve(source_path) == self._safe_resolve(target_path):
+                return target_path, ProcessStatus.SKIP_ALREADY_ORGANIZED
+
             status = (
                 ProcessStatus.DELETE_DUPLICATE
                 if self.delete_duplicates
@@ -118,6 +133,12 @@ class PixProcessor:
             target = item["target"]
             status = item["status"]
 
+            # 安全前置检查：源文件是否还存在
+            if not source.exists():
+                item["status"] = f"{status} (Failed: Source file no longer exists)"
+                yield item
+                continue
+
             if status == ProcessStatus.MOVE and target is not None:
                 try:
                     parent = target.parent
@@ -132,9 +153,14 @@ class PixProcessor:
                     item["status"] = f"{status} (Failed: {e})"
             elif status == ProcessStatus.DELETE_DUPLICATE:
                 try:
-                    source.unlink()
-                    log_action(self.log_dir, self.log_file, source, target, status)
-                    item["status"] = f"{status} (Success)"
+                    if not target.exists():
+                        item["status"] = (
+                            f"{status} (Failed: Target file missing, aborting deletion to prevent data loss)"
+                        )
+                    else:
+                        source.unlink()
+                        log_action(self.log_dir, self.log_file, source, target, status)
+                        item["status"] = f"{status} (Success)"
                 except Exception as e:
                     item["status"] = f"{status} (Failed: {e})"
             elif str(status).startswith("Skip") and "Duplicate" in str(status):
