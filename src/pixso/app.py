@@ -1,8 +1,10 @@
 import os
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import typer
+from rich.panel import Panel
 from rich.prompt import Confirm
 from rich.table import Table
 
@@ -18,9 +20,6 @@ from .utils import (
     get_progress,
     get_target_dir,
 )
-
-from collections import defaultdict
-from rich.panel import Panel
 
 app = typer.Typer(help="图片/视频元数据处理与归档工具", no_args_is_help=True)
 
@@ -68,7 +67,9 @@ def print_plan_summary(plan: List[Dict[str, Any]], target_dir: Path):
 
     for day in sorted(day_stats.keys()):
         stats = day_stats[day]
-        p_v_m = f"{stats[MediaType.PHOTO]}/{stats[MediaType.VIDEO]}/{stats[MediaType.MISC]}"
+        p_v_m = (
+            f"{stats[MediaType.PHOTO]}/{stats[MediaType.VIDEO]}/{stats[MediaType.MISC]}"
+        )
         day_total = stats["archive"] + stats["unknown"] + stats["duplicate"]
         table.add_row(
             day,

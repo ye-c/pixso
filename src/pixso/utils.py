@@ -95,11 +95,18 @@ def get_files(path: Path) -> List[Path]:
             files.append(path)
     elif path.is_dir():
         for f in path.rglob("*"):
+            # 只有当 duplicates 是相对于搜索根路径的子目录时才过滤
+            # 这样如果用户显式指定了 duplicates 目录，则可以正常处理其中的文件
+            try:
+                rel_parts = f.relative_to(path).parts
+            except ValueError:
+                rel_parts = f.parts
+
             if (
                 f.is_file()
                 and f.suffix.lower() in config.ALL_EXTENSIONS
                 and not f.name.startswith((".", "._"))
-                and "duplicates" not in f.parts
+                and "duplicates" not in rel_parts
             ):
                 files.append(f)
     return files
