@@ -89,7 +89,43 @@ class PixExif:
             )
 
             if dt:
-                self._meta.timestamp = str(dt).replace(':', '').replace(' ', '')
+                dt_str = str(dt)
+                # 尝试解析多种格式，包括带 上午/下午 的中文格式
+                parsed_dt = self._parse_image_time(dt_str)
+                if parsed_dt:
+                    self._meta.timestamp = parsed_dt
+                else:
+                    # 如果解析失败，回退到原始逻辑但尝试清理非数字字符
+                    self._meta.timestamp = "".join(filter(str.isdigit, dt_str))
+
+    def _parse_image_time(self, time_str: str) -> str:
+        """解析图片 EXIF 时间字符串"""
+        # 处理中文 上午/下午
+        is_pm = False
+        if '下午' in time_str:
+            is_pm = True
+            time_str = time_str.replace('下午', '').strip()
+        elif '上午' in time_str:
+            time_str = time_str.replace('上午', '').strip()
+
+        formats = [
+            '%Y:%m:%d %H:%M:%S',
+            '%Y-%m-%d %H:%M:%S',
+            '%Y:%m:%d %H:%M',
+            '%Y%m%d%H%M%S',
+        ]
+
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(time_str, fmt)
+                if is_pm and dt.hour < 12:
+                    dt = dt.replace(hour=dt.hour + 12)
+                elif not is_pm and dt.hour == 12:
+                    dt = dt.replace(hour=0)
+                return dt.strftime('%Y%m%d%H%M%S')
+            except ValueError:
+                continue
+        return None
 
     def _parse_video_time(self, time_str: str) -> str:
         """尝试多种格式解析视频时间，并处理 UTC+8 时区偏移"""

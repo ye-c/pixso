@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,7 +20,9 @@ from .utils import (
 app = typer.Typer(help="图片/视频元数据处理与归档工具", no_args_is_help=True)
 
 
-def print_plan_table(plan: List[Dict[str, Any]], target_dir: Path, title: str = "执行计划"):
+def print_plan_table(
+    plan: List[Dict[str, Any]], target_dir: Path, title: str = "执行计划"
+):
     """优雅地打印同步/整理计划表格"""
     table = Table(title=title)
     table.add_column("源位置", style="cyan")
@@ -56,7 +59,9 @@ def print_plan_table(plan: List[Dict[str, Any]], target_dir: Path, title: str = 
             except ValueError:
                 target_display = str(target)
             status_str = (
-                status.format_rich() if isinstance(status, ProcessStatus) else str(status)
+                status.format_rich()
+                if isinstance(status, ProcessStatus)
+                else str(status)
             )
         else:
             target_display = "N/A"
@@ -74,7 +79,8 @@ def print_plan_table(plan: List[Dict[str, Any]], target_dir: Path, title: str = 
 @app.command()
 def sync(
     path: Optional[str] = typer.Argument(
-        None, help="要同步或导入的文件/目录路径。可以是库外路径（导入）或库内路径（整理）"
+        None,
+        help="要同步或导入的文件/目录路径。可以是库外路径（导入）或库内路径（整理）",
     ),
     month: Optional[str] = typer.Option(
         None, "-m", "--month", help="指定归档库中的月份 (YYYYMM)"
@@ -125,15 +131,18 @@ def sync(
         mode_desc = f"同步月份: [cyan]{month}[/cyan]"
     else:
         console.print("[red]错误: 必须提供路径参数或 --month 选项[/red]")
-        console.print("用法举例:\n  px sync ~/Downloads\n  px sync unknown\n  px sync --month 202405")
+        console.print(
+            "用法举例:\n  px sync ~/Downloads\n  px sync unknown\n  px sync --month 202405"
+        )
         raise typer.Exit(1)
 
     # 2. 过滤
     if photo or video:
         files_to_process = [
-            f for f in files_to_process
-            if (photo and f.suffix.lower() in config.IMAGES) or
-               (video and f.suffix.lower() in config.VIDEOS)
+            f
+            for f in files_to_process
+            if (photo and f.suffix.lower() in config.IMAGES)
+            or (video and f.suffix.lower() in config.VIDEOS)
         ]
         mode_desc += " (已过滤类型)"
 
@@ -152,7 +161,9 @@ def sync(
         )
 
     # 4. 过滤掉无需操作的文件
-    active_plan = [item for item in plan if item["status"] != ProcessStatus.SKIP_ALREADY_ORGANIZED]
+    active_plan = [
+        item for item in plan if item["status"] != ProcessStatus.SKIP_ALREADY_ORGANIZED
+    ]
 
     if not active_plan:
         console.print("[green]所有文件均已符合规范，无需操作。[/green]")
@@ -261,12 +272,30 @@ def info(
         table.add_column("值", style="magenta")
 
         # 系统字段
-        table.add_row("[bold yellow]时间戳[/bold yellow]", f"[bold yellow]{exif._meta.timestamp}[/bold yellow]")
-        table.add_row("[bold yellow]设备 (原始)[/bold yellow]", f"[bold yellow]{exif._meta.device}[/bold yellow]")
-        table.add_row("[bold yellow]设备 (简短)[/bold yellow]", f"[bold yellow]{exif.get_device_short()}[/bold yellow]")
-        table.add_row("[bold yellow]Hash8[/bold yellow]", f"[bold yellow]{exif.get_hash8()}[/bold yellow]")
-        table.add_row("[bold yellow]是否未知时间[/bold yellow]", f"[bold yellow]{exif._meta.is_unknown_time}[/bold yellow]")
-        table.add_row("[bold yellow]最终文件名[/bold yellow]", f"[bold yellow]{exif.rename()}[/bold yellow]")
+        table.add_row(
+            "[bold yellow]时间戳[/bold yellow]",
+            f"[bold yellow]{exif._meta.timestamp}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]设备 (原始)[/bold yellow]",
+            f"[bold yellow]{exif._meta.device}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]设备 (简短)[/bold yellow]",
+            f"[bold yellow]{exif.get_device_short()}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]Hash8[/bold yellow]",
+            f"[bold yellow]{exif.get_hash8()}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]是否未知时间[/bold yellow]",
+            f"[bold yellow]{exif._meta.is_unknown_time}[/bold yellow]",
+        )
+        table.add_row(
+            "[bold yellow]最终文件名[/bold yellow]",
+            f"[bold yellow]{exif.rename()}[/bold yellow]",
+        )
 
         # 归档目录
         try:
@@ -274,7 +303,10 @@ def info(
             processor = PixProcessor(str(target_dir))
             target_path, _ = processor._compute_target(exif)
             rel_target_dir = target_path.parent.relative_to(target_dir)
-            table.add_row("[bold green]归档目录[/bold green]", f"[bold green]{rel_target_dir}[/bold green]")
+            table.add_row(
+                "[bold green]归档目录[/bold green]",
+                f"[bold green]{rel_target_dir}[/bold green]",
+            )
         except Exception:
             pass
 
