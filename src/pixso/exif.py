@@ -6,7 +6,7 @@ from pathlib import Path
 import ffmpeg
 from exifread import process_file
 
-from .utils import get_clean_name, parse_filename_stem
+from .utils import get_hash8
 
 
 @dataclass
@@ -26,17 +26,22 @@ class PixExif:
     _IMAGES = {".jpg", ".jpeg", ".png", ".cr2", ".arw", ".heif"}  # , ".heic"
     _VIDEOS = {".mov", ".mp4", ".avi", ".mkv"}
 
+    # 设备名称映射表
+    _DEVICE_MAP = {
+        "iPhone_15_Pro": "iP15P",
+        "iPhone_15_Pro_Max": "iP15PM",
+        "iPhone_14_Pro": "iP14P",
+        "ILCE-7CM2": "A7C2",
+        "ILCE-7RM4": "A7R4",
+        "ILCE-7M4": "A7M4",
+        "GoPro": "GoPro",
+    }
+
     def __init__(self, path):
         self._path = Path(path)
 
-        stem = self._path.stem
-        _, clean_name = parse_filename_stem(stem)
-
-        # 剥离冲突后缀 (如 _1, _2)
-        clean_name = re.sub(r'_\d+$', '', clean_name)
-
         self._meta = PixMeta(
-            original_name=clean_name,
+            original_name=self._path.stem,
             suffix=self._path.suffix,
         )
         self.raw_tags = {}
@@ -107,7 +112,6 @@ class PixExif:
         """提取视频元数据"""
         try:
             probe = ffmpeg.probe(str(self._path))
-            # print(probe)
 
             # 1. 获取 format 层级和 stream 层级的 tags
             format_tags = probe.get('format', {}).get('tags', {})
@@ -137,10 +141,6 @@ class PixExif:
                 parsed_time = self._parse_video_time(creation_time)
                 if parsed_time:
                     self._meta.timestamp = parsed_time
-                else:
-                    print(
-                        f"Warning: Failed to parse video creation_time '{creation_time}' for {self._path}"
-                    )
 
             # 3. 提取设备信息
             model = (
@@ -149,34 +149,22 @@ class PixExif:
                 or format_tags.get('com.apple.quicktime.model')
             )
 
-            # 尝试从 encoder 或 handler_name 中提取特征 (例如 GoPro)
             if not model:
                 encoder = str(stream_tags.get('encoder', '') or stream_tags.get('handler_name', ''))
                 if 'GoPro' in encoder:
                     model = 'GoPro'
 
-            # 如果没有明确的 model，尝试使用 major_brand
             if not model:
                 brand = format_tags.get('major_brand')
-                # 过滤掉太宽泛的通用格式名
                 if brand and brand.lower().strip() not in ('isom', 'mp41', 'mp42', 'qt', 'avc1'):
                     model = brand
-
-            if not model:
-                # 尝试从 compatible_brands 提取有意义的名字 (比如 XAVCmp42iso6 -> XAVC)
-                comp_brands = str(format_tags.get('compatible_brands', ''))
-                if 'XAVC' in comp_brands.upper():
-                    model = 'XAVC'
-                elif 'avc1' in comp_brands.lower():
-                    model = 'AVC'
 
             if model:
                 model_str = str(model).strip().replace(" ", "_")
                 if self._meta.device == "unknown":
                     self._meta.device = model_str
 
-        except Exception as e:
-            print(f"Error extracting video metadata for {self._path}: {e}")
+        except Exception:
             if self._meta.device == "unknown":
                 self._meta.device = "unknown"
 
@@ -188,24 +176,22 @@ class PixExif:
     def is_video(self) -> bool:
         return self._path.suffix.lower() in self._VIDEOS
 
+    def get_device_short(self) -> str:
+        """获取简短的设备代号"""
+        device = self._meta.device
+        # 尝试精确匹配
+        if device in self._DEVICE_MAP:
+            return self._DEVICE_MAP[device]
+
+        # 尝试模糊匹配 (部分匹配)
+        for full, short in self._DEVICE_MAP.items():
+            if full.lower() in device.lower() or device.lower() in full.lower():
+                return short
+
+        return "unknown"
+
     def rename(self):
-        """生成标准化的文件名: {timestamp}_{clean_device}_{clean_name}"""
-        clean_device = get_clean_name(self._meta.device)
-        # 核心逻辑：dirty_name 也先清洗，再匹配剥离 device
-        dirty_name_clean = get_clean_name(self._meta.original_name)
-
-        clean_name = dirty_name_clean
-        if clean_device and clean_device != 'unknown':
-            # 如果 clean_name 以 clean_device 开头，剥离它
-            if clean_name.lower().startswith(clean_device.lower()):
-                # 剥离 clean_device
-                clean_name = clean_name[len(clean_device):]
-                # 剥离可能残留的下划线等分隔符（因为 get_clean_name 已经去掉了非字母数字，所以这里不需要再剥离下划线）
-                # 但是，如果原始名是 ILCE7CM2_DSC01986，get_clean_name 之后变成 ILCE7CM2DSC01986
-                # 剥离 ILCE7CM2 之后剩下 DSC01986，这正是我们想要的。
-
-                # 如果剥离后空了（说明原文件名就是设备名），则还原回设备名
-                if not clean_name:
-                    clean_name = clean_device
-
-        return f"{self._meta.timestamp}_{clean_device}_{clean_name}{self._meta.suffix}"
+        """生成标准化的文件名: {timestamp}_{device_short}_{hash8}{suffix}"""
+        device_short = self.get_device_short()
+        hash8 = get_hash8(self._path)
+        return f"{self._meta.timestamp}_{device_short}_{hash8}{self._meta.suffix}"

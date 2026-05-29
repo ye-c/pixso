@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .exif import PixExif
-from .utils import get_file_hash, log_action
+from .utils import log_action
 
 
 class PixProcessor:
@@ -22,9 +22,7 @@ class PixProcessor:
         self, files: List[Path], progress_callback=None
     ) -> List[Dict[str, Any]]:
         """为文件列表生成移动计划"""
-
         plan = []
-        # 使用 ThreadPoolExecutor 因为 metadata 提取 (ffmpeg probe) 主要是 I/O 密集型
         with ThreadPoolExecutor(max_workers=8) as executor:
             for result in executor.map(self._process_one, files):
                 plan.append(result)
@@ -54,16 +52,14 @@ class PixProcessor:
     def _compute_target(self, exif: PixExif) -> tuple[Path, str]:
         """计算目标路径并处理冲突"""
         source_path = exif._path
-        # 确定类别 (如果没有成功提取时间戳，进入 unknown)
+
+        # 确定类别
         if exif._meta.is_unknown_time:
             category = "unknown"
+            date_folder = "000000"
         else:
             category = "archive"
-
-        # 确定日期文件夹 (YYYYMM)
-        date_folder = (
-            exif._meta.timestamp[:6] if not exif._meta.is_unknown_time else "000000"
-        )
+            date_folder = exif._meta.timestamp[:6]
 
         # 确定媒体类型
         if exif.is_image:
@@ -79,7 +75,7 @@ class PixProcessor:
         else:
             base_dir = self.target_dir / category / date_folder / media_type
 
-        # 统一使用 rename() 获取带时间戳的文件名
+        # 获取带 Hash8 的文件名
         target_name = exif.rename()
         target_path = base_dir / target_name
 
@@ -90,42 +86,19 @@ class PixProcessor:
         ):
             return target_path, "Skip (Already Organized)"
 
-        status = "Move"
-
-        # 冲突处理
+        # 冲突处理：由于文件名带 Hash8，同名即代表内容相同（碰撞概率极低）
         if target_path.exists():
-            # 优化：先比大小，大小不同直接认定不是重复
-            if source_path.stat().st_size != target_path.stat().st_size:
-                # 冲突但内容不同，重命名 (跳过哈希计算)
-                pass
-            else:
-                source_hash = get_file_hash(source_path)
-                target_hash = get_file_hash(target_path)
+            status = (
+                "Delete (Duplicate)"
+                if self.delete_duplicates
+                else "Skip (Duplicate)"
+            )
+            return target_path, status
 
-                if source_hash == target_hash:
-                    status = (
-                        "Delete (Duplicate)"
-                        if self.delete_duplicates
-                        else "Skip (Duplicate)"
-                    )
-                    return target_path, status
-
-            # 冲突但内容不同，重命名
-            counter = 1
-            while True:
-                new_name = f"{target_path.stem}_{counter}{target_path.suffix}"
-                new_target = base_dir / new_name
-                if not new_target.exists():
-                    target_path = new_target
-                    status = "Rename (Collision)"
-                    break
-                counter += 1
-
-        return target_path, status
+        return target_path, "Move"
 
     def execute_plan(self, plan: List[Dict[str, Any]]):
         """执行移动计划"""
-        # 缓存已创建的目录以减少 mkdir 系统调用
         created_dirs = set()
 
         for item in plan:
@@ -160,9 +133,8 @@ class PixProcessor:
                         dup_dir.mkdir(parents=True, exist_ok=True)
                         created_dirs.add(dup_dir)
 
+                    # 保持源文件名
                     dest = dup_dir / source.name
-
-                    # 如果文件名冲突，加时间戳防止覆盖
                     if dest.exists():
                         dest = (
                             dup_dir

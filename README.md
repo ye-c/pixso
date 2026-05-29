@@ -25,7 +25,7 @@ git clone <repository-url>
 cd pixso
 
 # 安装依赖并安装工具
-uv pip install .
+uv sync
 ```
 
 安装完成后，你可以使用 `px` 命令。
