@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-px = "pixso.cli:main"
+px = "pixso.app:app"
 
 [build-system]
 requires = ["uv_build>=0.9.15,<0.10.0"]

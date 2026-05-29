@@ -4,6 +4,16 @@ from datetime import datetime
 from pathlib import Path
 
 
+from enum import Enum
+
+class ProcessStatus(str, Enum):
+    MOVE = "Move"
+    SKIP_ALREADY_ORGANIZED = "Skip (Already Organized)"
+    SKIP_DUPLICATE = "Skip (Duplicate)"
+    DELETE_DUPLICATE = "Delete (Duplicate)"
+    ERROR = "Error"
+    RENAME = "Rename"  # 虽然目前不再使用数字重命名，但保留作为状态扩展
+
 def get_file_hash(path: Path, chunk_size: int = 8192) -> str:
     """计算文件的 SHA-256 哈希值（分块读取以节省内存）"""
     hasher = hashlib.sha256()

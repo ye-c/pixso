@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .exif import PixExif
-from .utils import log_action
+from .utils import ProcessStatus, log_action
 
 
 class PixProcessor:
@@ -45,7 +45,7 @@ class PixProcessor:
             return {
                 "source": file_path,
                 "target": None,
-                "status": f"Error: {e}",
+                "status": f"{ProcessStatus.ERROR}: {e}",
                 "exif": None,
             }
 
@@ -84,18 +84,18 @@ class PixProcessor:
             source_path.name == target_path.name
             and source_path.parent.resolve() == target_path.parent.resolve()
         ):
-            return target_path, "Skip (Already Organized)"
+            return target_path, ProcessStatus.SKIP_ALREADY_ORGANIZED
 
         # 冲突处理：由于文件名带 Hash8，同名即代表内容相同（碰撞概率极低）
         if target_path.exists():
             status = (
-                "Delete (Duplicate)"
+                ProcessStatus.DELETE_DUPLICATE
                 if self.delete_duplicates
-                else "Skip (Duplicate)"
+                else ProcessStatus.SKIP_DUPLICATE
             )
             return target_path, status
 
-        return target_path, "Move"
+        return target_path, ProcessStatus.MOVE
 
     def execute_plan(self, plan: List[Dict[str, Any]]):
         """执行移动计划"""
@@ -106,7 +106,7 @@ class PixProcessor:
             target = item["target"]
             status = item["status"]
 
-            if status == "Move" and target is not None:
+            if status == ProcessStatus.MOVE and target is not None:
                 try:
                     parent = target.parent
                     if parent not in created_dirs:
@@ -118,14 +118,14 @@ class PixProcessor:
                     item["status"] = f"{status} (Success)"
                 except Exception as e:
                     item["status"] = f"{status} (Failed: {e})"
-            elif status == "Delete (Duplicate)":
+            elif status == ProcessStatus.DELETE_DUPLICATE:
                 try:
                     source.unlink()
                     log_action(self.log_dir, self.log_file, source, target, status)
                     item["status"] = f"{status} (Success)"
                 except Exception as e:
                     item["status"] = f"{status} (Failed: {e})"
-            elif status.startswith("Skip") and "Duplicate" in status:
+            elif str(status).startswith("Skip") and "Duplicate" in str(status):
                 # 将重复文件移动到 target_dir/duplicates
                 try:
                     dup_dir = self.target_dir / "duplicates"
@@ -148,7 +148,7 @@ class PixProcessor:
                     item["status"] = "Move (Duplicate Success)"
                 except Exception as e:
                     item["status"] = f"Move (Duplicate Failed: {e})"
-            elif status.startswith("Skip"):
+            elif str(status).startswith("Skip"):
                 log_action(self.log_dir, self.log_file, source, target, status)
 
             yield item

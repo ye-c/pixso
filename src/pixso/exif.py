@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +38,7 @@ class PixExif:
 
     def __init__(self, path):
         self._path = Path(path)
+        self._hash8 = None
 
         self._meta = PixMeta(
             original_name=self._path.stem,
@@ -46,6 +46,12 @@ class PixExif:
         )
         self.raw_tags = {}
         self._extract()
+
+    def get_hash8(self) -> str:
+        """获取并缓存文件的 Hash8"""
+        if self._hash8 is None:
+            self._hash8 = get_hash8(self._path)
+        return self._hash8
 
     def _extract(self):
         """提取元数据"""
@@ -84,6 +90,7 @@ class PixExif:
     def _parse_video_time(self, time_str: str) -> str:
         """尝试多种格式解析视频时间，并处理 UTC+8 时区偏移"""
         from datetime import timedelta
+
         formats = [
             '%Y-%m-%dT%H:%M:%S.%fZ',
             '%Y-%m-%dT%H:%M:%SZ',
@@ -150,13 +157,22 @@ class PixExif:
             )
 
             if not model:
-                encoder = str(stream_tags.get('encoder', '') or stream_tags.get('handler_name', ''))
+                encoder = str(
+                    stream_tags.get('encoder', '')
+                    or stream_tags.get('handler_name', '')
+                )
                 if 'GoPro' in encoder:
                     model = 'GoPro'
 
             if not model:
                 brand = format_tags.get('major_brand')
-                if brand and brand.lower().strip() not in ('isom', 'mp41', 'mp42', 'qt', 'avc1'):
+                if brand and brand.lower().strip() not in (
+                    'isom',
+                    'mp41',
+                    'mp42',
+                    'qt',
+                    'avc1',
+                ):
                     model = brand
 
             if model:
@@ -193,5 +209,5 @@ class PixExif:
     def rename(self):
         """生成标准化的文件名: {timestamp}_{device_short}_{hash8}{suffix}"""
         device_short = self.get_device_short()
-        hash8 = get_hash8(self._path)
+        hash8 = self.get_hash8()
         return f"{self._meta.timestamp}_{device_short}_{hash8}{self._meta.suffix}"
