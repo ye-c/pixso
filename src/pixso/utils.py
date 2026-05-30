@@ -87,6 +87,27 @@ def get_progress(description: str, total: int) -> Progress:
     return progress
 
 
+def get_display_path(path: Path, base_dirs: List[Path] = None) -> str:
+    """获取美化的显示路径，尝试使其相对于 base_dirs 或当前目录"""
+    if base_dirs is None:
+        base_dirs = [Path.cwd()]
+
+    for base in base_dirs:
+        try:
+            return str(path.relative_to(base))
+        except ValueError:
+            continue
+    return str(path)
+
+
+def safe_resolve(path: Path) -> Path:
+    """安全地解析路径，防止因权限或符号链接问题抛出异常"""
+    try:
+        return path.resolve()
+    except Exception:
+        return path.absolute()
+
+
 def get_files(path: Path) -> List[Path]:
     """递归获取目录下所有支持的文件 (单次遍历)"""
     files = []

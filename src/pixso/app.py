@@ -16,6 +16,7 @@ from .utils import (
     MediaType,
     ProcessStatus,
     console,
+    get_display_path,
     get_files,
     get_progress,
     get_target_dir,
@@ -27,7 +28,14 @@ app = typer.Typer(help="图片/视频元数据处理与归档工具", no_args_is
 def print_plan_summary(plan: List[Dict[str, Any]], target_dir: Path):
     """打印执行计划摘要"""
     day_stats = defaultdict(
-        lambda: {"archive": 0, "unknown": 0, "duplicate": 0, "p": 0, "v": 0, "misc": 0}
+        lambda: {
+            "archive": 0,
+            "unknown": 0,
+            "duplicate": 0,
+            MediaType.PHOTO: 0,
+            MediaType.VIDEO: 0,
+            MediaType.MISC: 0,
+        }
     )
     unknown_samples = []
     total_count = len(plan)
@@ -40,8 +48,7 @@ def print_plan_summary(plan: List[Dict[str, Any]], target_dir: Path):
             continue
 
         # 按天分组 (YYYY-MM-DD)
-        ts = exif._meta.timestamp
-        day = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
+        day = exif.formatted_date
 
         # 统计操作类型
         if status in (ProcessStatus.SKIP_DUPLICATE, ProcessStatus.DELETE_DUPLICATE):
@@ -93,15 +100,8 @@ def print_plan_summary(plan: List[Dict[str, Any]], target_dir: Path):
         for item in unknown_samples:
             source = item["source"]
             target = item["target"]
-            try:
-                src_display = str(source.relative_to(Path.cwd()))
-            except ValueError:
-                src_display = source.name
-
-            try:
-                tgt_display = str(target.relative_to(target_dir))
-            except ValueError:
-                tgt_display = str(target)
+            src_display = get_display_path(source)
+            tgt_display = get_display_path(target, [target_dir])
 
             sample_table.add_row(src_display, "→", tgt_display)
         console.print(sample_table)
@@ -135,13 +135,7 @@ def print_plan_table(
         status = item["status"]
 
         # 1. 计算源路径显示
-        try:
-            source_display = str(source.relative_to(target_dir))
-        except ValueError:
-            try:
-                source_display = str(source.relative_to(Path.cwd()))
-            except ValueError:
-                source_display = str(source)
+        source_display = get_display_path(source, [target_dir, Path.cwd()])
 
         # 2. 计算状态和目标路径显示
         if status == ProcessStatus.SKIP_DUPLICATE:
@@ -151,10 +145,7 @@ def print_plan_table(
             status_str = "[bold red]Delete Duplicate[/bold red]"
             target_display = "[bold red]DELETE[/bold red]"
         elif target:
-            try:
-                target_display = str(target.relative_to(target_dir))
-            except ValueError:
-                target_display = str(target)
+            target_display = get_display_path(target, [target_dir])
             status_str = (
                 status.format_rich()
                 if isinstance(status, ProcessStatus)
@@ -315,23 +306,20 @@ def stats(
                 }
 
             for root, _, files in os.walk(month_dir):
+                # 优化：通过目录名（p/v/misc）直接确定媒体类型，而不解析元数据
+                rel_path = Path(root).relative_to(month_dir)
+                parts = rel_path.parts
+                media_type = MediaType.MISC
+                if MediaType.PHOTO in parts:
+                    media_type = MediaType.PHOTO
+                elif MediaType.VIDEO in parts:
+                    media_type = MediaType.VIDEO
+
                 for f in files:
                     if f.startswith((".", "._")):
                         continue
 
-                    p = Path(root) / f
-                    try:
-                        exif = PixExif(p)
-                        stats_data[m][exif.media_type] += 1
-                    except Exception:
-                        # 如果解析失败，简单通过后缀回退
-                        ext = p.suffix.lower()
-                        if ext in config.IMAGES:
-                            stats_data[m][MediaType.PHOTO] += 1
-                        elif ext in config.VIDEOS:
-                            stats_data[m][MediaType.VIDEO] += 1
-                        else:
-                            stats_data[m][MediaType.MISC] += 1
+                    stats_data[m][media_type] += 1
 
     for cat in [Category.ARCHIVE, Category.UNKNOWN]:
         scan_dir(target_dir / cat)

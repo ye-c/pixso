@@ -251,12 +251,23 @@ class PixExif:
 
     @property
     def media_type(self) -> MediaType:
-        if self.is_image:
+        return self.get_media_type_by_extension(self._path)
+
+    @staticmethod
+    def get_media_type_by_extension(path: Path) -> MediaType:
+        ext = path.suffix.lower()
+        if ext in config.IMAGES:
             return MediaType.PHOTO
-        if self.is_video:
+        if ext in config.VIDEOS:
             return MediaType.VIDEO
         return MediaType.MISC
 
     @property
     def month(self) -> str:
         return self._meta.timestamp[:6]
+
+    @property
+    def formatted_date(self) -> str:
+        """返回 YYYY-MM-DD 格式的日期"""
+        ts = self._meta.timestamp
+        return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .exif import PixExif
-from .utils import ProcessStatus, log_action
+from .utils import ProcessStatus, log_action, safe_resolve
 
 
 class PixProcessor:
@@ -19,13 +19,6 @@ class PixProcessor:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.log_file = self.log_dir / f"px_{timestamp}.log"
 
-    def _safe_resolve(self, path: Path) -> Path:
-        """安全地解析路径，防止因权限或符号链接问题抛出异常"""
-        try:
-            return path.resolve()
-        except Exception:
-            return path.absolute()
-
     def plan_moves(
         self, files: List[Path], progress_callback=None
     ) -> List[Dict[str, Any]]:
@@ -34,10 +27,7 @@ class PixProcessor:
         # 1. 预处理：按绝对路径去重，防止同一个文件被处理两次
         unique_files = {}
         for f in files:
-            try:
-                unique_files[f.resolve()] = f
-            except Exception:
-                unique_files[f] = f
+            unique_files[safe_resolve(f)] = f
         files = list(unique_files.values())
 
         plan = []
@@ -52,9 +42,9 @@ class PixProcessor:
                     if target in planned_targets:
                         # 如果同一个计划中已经有文件占用了这个目标路径
                         # 检查是否是同一个物理文件
-                        if self._safe_resolve(
-                            planned_targets[target]
-                        ) == self._safe_resolve(file_path):
+                        if safe_resolve(planned_targets[target]) == safe_resolve(
+                            file_path
+                        ):
                             res["status"] = ProcessStatus.SKIP_ALREADY_ORGANIZED
                         else:
                             res["status"] = (
@@ -104,15 +94,15 @@ class PixProcessor:
         target_path = base_dir / target_name
 
         # 检查是否已经是归档好的文件
-        if source_path.name == target_path.name and self._safe_resolve(
+        if source_path.name == target_path.name and safe_resolve(
             source_path.parent
-        ) == self._safe_resolve(target_path.parent):
+        ) == safe_resolve(target_path.parent):
             return target_path, ProcessStatus.SKIP_ALREADY_ORGANIZED
 
         # 冲突处理：由于文件名带 Hash8，同名即代表内容相同（碰撞概率极低）
         if target_path.exists():
             # 特殊处理：如果源文件就在目标位置（比如只是大小写不同，或者inode相同）
-            if self._safe_resolve(source_path) == self._safe_resolve(target_path):
+            if safe_resolve(source_path) == safe_resolve(target_path):
                 return target_path, ProcessStatus.SKIP_ALREADY_ORGANIZED
 
             status = (
@@ -163,7 +153,7 @@ class PixProcessor:
                         item["status"] = f"{status} (Success)"
                 except Exception as e:
                     item["status"] = f"{status} (Failed: {e})"
-            elif str(status).startswith("Skip") and "Duplicate" in str(status):
+            elif status == ProcessStatus.SKIP_DUPLICATE:
                 # 将重复文件移动到 target_dir/duplicates
                 try:
                     dup_dir = self.target_dir / "duplicates"
@@ -186,7 +176,7 @@ class PixProcessor:
                     item["status"] = "Move (Duplicate Success)"
                 except Exception as e:
                     item["status"] = f"Move (Duplicate Failed: {e})"
-            elif str(status).startswith("Skip"):
+            elif status == ProcessStatus.SKIP_ALREADY_ORGANIZED:
                 log_action(self.log_dir, self.log_file, source, target, status)
 
             yield item
