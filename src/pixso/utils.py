@@ -1,10 +1,11 @@
 import hashlib
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import List
+from typing import Any, List, Optional
 
 from rich.console import Console
 from rich.progress import (
@@ -59,6 +60,33 @@ class ProcessStatus(str, Enum):
         if self == ProcessStatus.MOVE or "Move" in status_str:
             return f"[green]{status_str}[/green]"
         return status_str
+
+
+@dataclass
+class PlanItem:
+    """表示单个文件的处理计划"""
+
+    source: Path
+    target: Optional[Path]
+    status: ProcessStatus | str
+    exif: Any = None  # 避免循环引用，使用 Any
+    error_msg: Optional[str] = None
+
+    @property
+    def is_active(self) -> bool:
+        """是否需要实际操作"""
+        return self.status != ProcessStatus.SKIP_ALREADY_ORGANIZED
+
+    def set_status(self, new_status: ProcessStatus | str, error: str = None):
+        self.status = new_status
+        if error:
+            self.error_msg = error
+            self.status = f"{new_status} (Failed: {error})"
+        elif isinstance(new_status, str) and "Success" in new_status:
+            pass  # 保持原样
+        elif "Failed" not in str(self.status) and "Success" not in str(self.status):
+            # 只有在非错误状态下才追加 Success
+            pass
 
 
 def get_target_dir() -> Path:
@@ -149,7 +177,12 @@ def get_hash8(path: Path) -> str:
 
 def log_action(log_dir: Path, log_file: Path, source: Path, target: Path, status: str):
     """将执行记录追加到日志文件"""
-    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        # 如果无法创建日志目录（例如外接硬盘未挂载），直接返回或打印警告
+        console.print(f"[yellow]警告: 无法写入日志目录 {log_dir}: {e}[/yellow]")
+        return
 
     record = {
         "timestamp": datetime.now().isoformat(),
@@ -158,5 +191,8 @@ def log_action(log_dir: Path, log_file: Path, source: Path, target: Path, status
         "status": status,
     }
 
-    with log_file.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    try:
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as e:
+        console.print(f"[yellow]警告: 无法写入日志文件 {log_file}: {e}[/yellow]")
